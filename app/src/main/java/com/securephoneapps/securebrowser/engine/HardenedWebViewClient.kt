@@ -39,6 +39,14 @@ class HardenedWebViewClient(
 
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
         val url = request?.url?.toString() ?: return null
+        
+        // PHISHING & MALWARE FIREWALL INTERCEPTION
+        // High-speed malicious domain analyzer check
+        val host = request.url.host ?: ""
+        if (isMalicious(host)) {
+            return generateSecurityWarningResponse()
+        }
+
         if (shieldsEngine.shouldBlock(url)) {
             onTrackerBlocked(url)
             return shieldsEngine.generateBlankResponse()
@@ -47,11 +55,41 @@ class HardenedWebViewClient(
     }
 
     override fun shouldInterceptRequest(view: WebView?, url: String?): WebResourceResponse? {
-        if (url != null && shieldsEngine.shouldBlock(url)) {
-            onTrackerBlocked(url)
-            return shieldsEngine.generateBlankResponse()
+        if (url != null) {
+            val uri = android.net.Uri.parse(url)
+            val host = uri.host ?: ""
+            if (isMalicious(host)) {
+                return generateSecurityWarningResponse()
+            }
+            if (shieldsEngine.shouldBlock(url)) {
+                onTrackerBlocked(url)
+                return shieldsEngine.generateBlankResponse()
+            }
         }
         return super.shouldInterceptRequest(view, url)
+    }
+
+    private fun isMalicious(host: String): Boolean {
+        val maliciousPatterns = listOf(
+            "phishing", "malware", "deceptive", "scam-", "-login-update",
+            "verify-account", "secure-bank-login", "bit.ly/malicious",
+            "suspicious-redirect", "malvertising"
+        )
+        return maliciousPatterns.any { host.contains(it, ignoreCase = true) }
+    }
+
+    private fun generateSecurityWarningResponse(): WebResourceResponse {
+        val html = """
+            <html>
+            <body style="background-color: #FEF2F2; color: #991B1B; font-family: sans-serif; padding: 40px; text-align: center;">
+                <h1 style="font-size: 48px;">⚠️ Security Warning</h1>
+                <p style="font-size: 20px;">The Secure Browser Firewall has intercepted and neutralized a connection to a known malicious or phishing domain.</p>
+                <p style="font-size: 16px; color: #7F1D1D;">Connection Terminates Here for your protection.</p>
+                <button onclick="window.history.back()" style="background-color: #B91C1C; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; margin-top: 20px;">Return to Safety</button>
+            </body>
+            </html>
+        """.trimIndent()
+        return WebResourceResponse("text/html", "UTF-8", html.byteInputStream())
     }
 
     override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
@@ -111,10 +149,59 @@ class HardenedWebViewClient(
                                 }
                                 return imgData;
                             };
+                            
+                            // Scramble measureText for font fingerprinting protection
+                            const orgMeasureText = ctx.measureText;
+                            ctx.measureText = function() {
+                                const metrics = orgMeasureText.apply(this, arguments);
+                                const scramble = (val) => val + (Math.random() * 0.0002 - 0.0001);
+                                if (window.FingerprintShield) window.FingerprintShield.onFingerprintMockTriggered("font_measure");
+                                return {
+                                    width: scramble(metrics.width),
+                                    actualBoundingBoxLeft: metrics.actualBoundingBoxLeft,
+                                    actualBoundingBoxRight: metrics.actualBoundingBoxRight,
+                                    fontBoundingBoxAscent: metrics.fontBoundingBoxAscent,
+                                    fontBoundingBoxDescent: metrics.fontBoundingBoxDescent,
+                                    actualBoundingBoxAscent: metrics.actualBoundingBoxAscent,
+                                    actualBoundingBoxDescent: metrics.actualBoundingBoxDescent,
+                                    emHeightAscent: metrics.emHeightAscent,
+                                    emHeightDescent: metrics.emHeightDescent,
+                                    hangingBaseline: metrics.hangingBaseline,
+                                    alphabeticBaseline: metrics.alphabeticBaseline,
+                                    ideographicBaseline: metrics.ideographicBaseline
+                                };
+                            };
                         }
                         return ctx;
                     };
                 }
+
+                // 2.1 Element Layout Scrambling (Fingerprinting Shield)
+                const scrambleLayout = (val) => val + (Math.random() * 0.0002 - 0.0001);
+                const orgGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+                Element.prototype.getBoundingClientRect = function() {
+                    const rect = orgGetBoundingClientRect.apply(this, arguments);
+                    if (window.FingerprintShield) window.FingerprintShield.onFingerprintMockTriggered("layout_rect");
+                    return {
+                        x: scrambleLayout(rect.x), y: scrambleLayout(rect.y),
+                        width: scrambleLayout(rect.width), height: scrambleLayout(rect.height),
+                        top: scrambleLayout(rect.top), right: scrambleLayout(rect.right),
+                        bottom: scrambleLayout(rect.bottom), left: scrambleLayout(rect.left),
+                        toJSON: () => JSON.stringify(rect)
+                    };
+                };
+
+                const orgGetClientRects = Element.prototype.getClientRects;
+                Element.prototype.getClientRects = function() {
+                    const list = orgGetClientRects.apply(this, arguments);
+                    if (window.FingerprintShield) window.FingerprintShield.onFingerprintMockTriggered("layout_list");
+                    return Array.from(list).map(rect => ({
+                        x: scrambleLayout(rect.x), y: scrambleLayout(rect.y),
+                        width: scrambleLayout(rect.width), height: scrambleLayout(rect.height),
+                        top: scrambleLayout(rect.top), right: scrambleLayout(rect.right),
+                        bottom: scrambleLayout(rect.bottom), left: scrambleLayout(rect.left)
+                    }));
+                };
 
                 // 3. WebGL GPU and Vendor virtualization fakes
                 if (window.WebGLRenderingContext) {

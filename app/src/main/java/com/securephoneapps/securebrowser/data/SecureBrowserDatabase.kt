@@ -44,6 +44,9 @@ interface BookmarkDao {
 
     @Query("DELETE FROM bookmark_items WHERE id = :id")
     suspend fun deleteBookmarkById(id: Long)
+
+    @Query("DELETE FROM bookmark_items")
+    suspend fun clearAllBookmarks()
 }
 
 @Dao

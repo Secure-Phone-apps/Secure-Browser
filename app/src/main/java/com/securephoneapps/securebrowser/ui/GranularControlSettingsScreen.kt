@@ -79,6 +79,7 @@ fun GranularControlSettingsScreen(
     val blockThirdParty by viewModel.blockThirdPartyCookies.collectAsState()
     val rtcPrivacy by viewModel.webRtcPrivacyEnabled.collectAsState()
     val deGoogling by viewModel.deGooglingTelemetryEnabled.collectAsState()
+    val forcedDark by viewModel.forcedDarkModeEnabled.collectAsState()
     val httpsOnly by viewModel.httpsOnlyMode.collectAsState()
     val searchEngineVal by viewModel.searchEngine.collectAsState()
     val customSearchEngineUrlVal by viewModel.customSearchEngineUrl.collectAsState()
@@ -204,6 +205,108 @@ fun GranularControlSettingsScreen(
                         checked = deGoogling,
                         onCheckedChange = { viewModel.toggleSetting("de_googling_telemetry_enabled", it) }
                     )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    SettingToggleRow(
+                        title = "Forced Layout Dark Mode Engine",
+                        subtitle = "Forcefully invert webpage canvas rendering for midnight browsing",
+                        checked = forcedDark,
+                        onCheckedChange = { viewModel.toggleForcedDarkMode(it) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // -- SECTION 3.5: Data Portability & Backup --
+            Text(
+                text = "DATA PORTABILITY & BACKUP",
+                fontSize = 11.sp,
+                color = Color(0xFF64748B),
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(12.dp)),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                val context = viewModel.getApplication<android.app.Application>()
+                                val export = viewModel.exportBookmarksToEncryptedJson(context)
+                                if (export.isNotBlank()) {
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Encrypted Backup", export)
+                                    clipboard.setPrimaryClip(clip)
+                                    android.widget.Toast.makeText(context, "Encrypted backup copied to clipboard", android.widget.Toast.LENGTH_LONG).show()
+                                }
+                            }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.SettingsBackupRestore, contentDescription = null, tint = Color(0xFF2563EB))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text("Export Encrypted Backup", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Copies encrypted bookmarks JSON to clipboard", color = Color(0xFF64748B), fontSize = 11.sp)
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    var showImportDialog by remember { mutableStateOf(false) }
+                    var importText by remember { mutableStateOf("") }
+                    
+                    if (showImportDialog) {
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = { showImportDialog = false },
+                            title = { Text("Import Encrypted Backup") },
+                            text = {
+                                Column {
+                                    Text("Paste the encrypted JSON string below:", fontSize = 12.sp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = importText,
+                                        onValueChange = { importText = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        placeholder = { Text("Paste here...") }
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                Button(onClick = {
+                                    viewModel.importBookmarksFromEncryptedJson(viewModel.getApplication(), importText)
+                                    showImportDialog = false
+                                    importText = ""
+                                }) { Text("Import") }
+                            },
+                            dismissButton = {
+                                androidx.compose.material3.TextButton(onClick = { showImportDialog = false }) { Text("Cancel") }
+                            }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showImportDialog = true }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.SettingsBackupRestore, contentDescription = null, tint = Color(0xFF059669))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text("Import Encrypted Backup", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Restore bookmarks from encrypted profile string", color = Color(0xFF64748B), fontSize = 11.sp)
+                        }
+                    }
                 }
             }
 

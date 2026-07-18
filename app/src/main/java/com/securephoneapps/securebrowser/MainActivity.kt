@@ -5,6 +5,8 @@ import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -105,6 +107,7 @@ import android.webkit.DownloadListener
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -126,6 +129,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // WEB ENGINE COLD-START WARMUP
+        // Instructure a detached background WebView instance to boot immediately.
+        // This forces Chromium to cache runtime rendering classes, cutting latency.
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                val warmupWebView = WebView(applicationContext)
+                warmupWebView.loadUrl("about:blank")
+                delay(1000)
+                warmupWebView.destroy()
+            } catch (e: Exception) {}
+        }
 
         setContent {
             val customLightPalette = lightColorScheme(
@@ -184,9 +199,23 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-fun configureEngineParameters(settings: WebSettings) {
+fun configureEngineParameters(settings: WebSettings, viewModel: BrowserStateViewModel? = null) {
     settings.apply {
         userAgentString = com.securephoneapps.securebrowser.engine.ShieldsCoreEngine().getRandomizedUserAgent()
+        
+        // FORCED WEB LAYOUT DARK MODE (Vivaldi Style)
+        // Checks if global override is enabled or if device is in dark mode
+        val forcedDark = viewModel?.forcedDarkModeEnabled?.value ?: true
+        if (forcedDark) {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+                WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_ON)
+            }
+        } else {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+                WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_OFF)
+            }
+        }
+        
         allowFileAccess = false
         allowContentAccess = false
         allowFileAccessFromFileURLs = false
@@ -599,6 +628,19 @@ fun BrowserWorkspaceScreen(
                 ) {
                     Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color(0xFF475569), modifier = Modifier.size(22.dp))
                 }
+
+                // SESSION PANIC TERMINATION ACTION
+                IconButton(
+                    onClick = {
+                        viewModel.executeHardPanicPurge()
+                        // Completely drop the OS application process matrix instantly
+                        android.os.Process.killProcess(android.os.Process.myPid())
+                        System.exit(0)
+                    },
+                    modifier = Modifier.testTag("nav_panic")
+                ) {
+                    Icon(Icons.Default.Warning, contentDescription = "Panic Purge", tint = Color(0xFFEF4444), modifier = Modifier.size(24.dp))
+                }
             }
         }
     ) { innerPadding ->
@@ -724,7 +766,7 @@ fun BrowserWorkspaceScreen(
                             setDownloadListener(SecureContainerDownloadListener(context, coroutineScope))
 
                             // Apply strict Sandbox parameters
-                            configureEngineParameters(settings)
+                            configureEngineParameters(settings, viewModel)
                             settings.javaScriptEnabled = jsEnabled
                             settings.userAgentString = if (selectedUa.contains("Mozilla/5.0 (Linux; Android 10; K)") || selectedUa.isBlank()) {
                                 shieldsEngine.getRandomizedUserAgent()
