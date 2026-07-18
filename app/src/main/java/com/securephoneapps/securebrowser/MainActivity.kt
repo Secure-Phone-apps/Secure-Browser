@@ -3,6 +3,7 @@ package com.securephoneapps.securebrowser
 import android.annotation.SuppressLint
 import android.os.Bundle
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.webkit.WebSettingsCompat
@@ -157,6 +158,24 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = customLightPalette) {
                 val viewModel: BrowserStateViewModel = viewModel()
                 val currentScreen by viewModel.currentScreen.collectAsState()
+                val themeColorHex by viewModel.activePageThemeColor.collectAsState()
+
+                // DYNAMIC THEME BAR COLOR MATCHING
+                LaunchedEffect(themeColorHex) {
+                    if (currentScreen == BrowserStateViewModel.Screen.Browser) {
+                        themeColorHex?.let { hex ->
+                            try {
+                                val colorInt = android.graphics.Color.parseColor(hex)
+                                window.statusBarColor = colorInt
+                                window.navigationBarColor = colorInt
+                            } catch (e: Exception) {}
+                        }
+                    } else {
+                        // Reset to default on other screens
+                        window.statusBarColor = android.graphics.Color.WHITE
+                        window.navigationBarColor = android.graphics.Color.WHITE
+                    }
+                }
 
                 Box(
                     modifier = Modifier
@@ -425,6 +444,14 @@ fun BrowserWorkspaceScreen(
     val focusManager = LocalFocusManager.current
     val shieldsEngine = remember { ShieldsCoreEngine() }
     val coroutineScope = rememberCoroutineScope()
+
+    // MEMORY LEAK DETACHMENT
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            viewModel.detachAndCleanupWebView(webViewInstance)
+            webViewInstance = null
+        }
+    }
 
     // Synchronize Input Field when active tab switches or navigates
     LaunchedEffect(activeTab?.currentUrl) {
@@ -813,6 +840,8 @@ fun BrowserWorkspaceScreen(
                                     canGoBack = canGoBack()
                                     canGoForward = canGoForward()
                                     viewModel.clearLiveTelemetry()
+                                    // Reset theme color on new page start
+                                    viewModel.activePageThemeColor.value = null
                                 },
                                 onPageFinishedCallback = { url, title ->
                                     isLoading = false
@@ -823,6 +852,23 @@ fun BrowserWorkspaceScreen(
                                     viewModel.updateActiveTabUrl(url, title)
                                 }
                             )
+
+                            webChromeClient = object : WebChromeClient() {
+                                override fun onReceivedTitle(view: WebView?, title: String?) {
+                                    super.onReceivedTitle(view, title)
+                                    // Intercept theme color data properties via JS bridge fallback
+                                    view?.evaluateJavascript("(function() { return document.querySelector('meta[name=\"theme-color\"]')?.content; })();") { color ->
+                                        if (color != null && color != "null") {
+                                            viewModel.activePageThemeColor.value = color.replace("\"", "")
+                                        }
+                                    }
+                                }
+
+                                override fun onReceivedIcon(view: WebView?, icon: android.graphics.Bitmap?) {
+                                    super.onReceivedIcon(view, icon)
+                                    // Could potentially extract dominant color from icon here if theme-color meta is missing
+                                }
+                            }
                         }
                     },
                     update = { webView ->

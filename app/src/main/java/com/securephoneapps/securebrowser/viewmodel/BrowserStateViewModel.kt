@@ -84,6 +84,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val customSearchEngineUrl = MutableStateFlow(encryptedPrefs.getString("custom_search_engine_url", "https://duckduckgo.com") ?: "https://duckduckgo.com")
     val liveBlockedDomains = MutableStateFlow<List<String>>(emptyList())
     val forcedDarkModeEnabled = MutableStateFlow(encryptedPrefs.getBoolean("forced_dark_mode_enabled", true))
+    val activePageThemeColor = MutableStateFlow<String?>(null)
     val selectedUserAgent = MutableStateFlow(
         encryptedPrefs.getString("custom_user_agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36") ?: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
     )
@@ -283,6 +284,20 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                 } else {
                     createDefaultTab()
                 }
+            }
+        }
+    }
+
+    // --- MEMORY LEAK DETACHMENT PIPELINE ---
+    fun detachAndCleanupWebView(webView: WebView?) {
+        webView?.post {
+            try {
+                webView.stopLoading()
+                webView.clearHistory()
+                webView.removeAllViews()
+                webView.destroy()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }

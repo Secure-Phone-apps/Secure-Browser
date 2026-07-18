@@ -254,6 +254,17 @@ class HardenedWebViewClient(
                         });
                     };
                 }
+
+                // 6. Language & Localization Masking
+                Object.defineProperty(navigator, 'language', { get: () => 'en-US' });
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US'] });
+                
+                // 7. Time Zone Masking
+                const orgResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+                Intl.DateTimeFormat.prototype.resolvedOptions = function() {
+                    const options = orgResolvedOptions.apply(this, arguments);
+                    return { ...options, timeZone: 'UTC' };
+                };
             } catch (e) {
                 console.error("Fingerprint shielding exception:", e);
             }
