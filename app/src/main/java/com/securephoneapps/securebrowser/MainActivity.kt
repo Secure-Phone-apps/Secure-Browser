@@ -186,6 +186,7 @@ class MainActivity : ComponentActivity() {
 
 fun configureEngineParameters(settings: WebSettings) {
     settings.apply {
+        userAgentString = com.securephoneapps.securebrowser.engine.ShieldsCoreEngine().getRandomizedUserAgent()
         allowFileAccess = false
         allowContentAccess = false
         allowFileAccessFromFileURLs = false
@@ -378,10 +379,12 @@ fun BrowserWorkspaceScreen(
     val blockThirdPartyCookies by viewModel.blockThirdPartyCookies.collectAsState()
     val selectedUa by viewModel.selectedUserAgent.collectAsState()
     val httpsOnly by viewModel.httpsOnlyMode.collectAsState()
+    val liveBlockedDomains by viewModel.liveBlockedDomains.collectAsState()
 
     var inputUrl by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var sslSecured by remember { mutableStateOf(true) }
+    var showBlockedBottomSheet by remember { mutableStateOf(false) }
 
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
@@ -430,6 +433,34 @@ fun BrowserWorkspaceScreen(
                         .testTag("ssl_indicator")
                 )
 
+                if (liveBlockedDomains.isNotEmpty()) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF2563EB).copy(alpha = 0.12f))
+                            .clickable { showBlockedBottomSheet = true }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .testTag("blocked_trackers_badge")
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Shield,
+                                contentDescription = "Blocked Trackers",
+                                tint = Color(0xFF2563EB),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${liveBlockedDomains.size}",
+                                color = Color(0xFF2563EB),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.width(10.dp))
 
                 // Editable Input Area
@@ -448,9 +479,11 @@ fun BrowserWorkspaceScreen(
                             focusManager.clearFocus()
                             if (inputUrl.isNotBlank()) {
                                 var target = viewModel.parseUrlOrSearch(inputUrl)
+                                target = shieldsEngine.stripTrackingParameters(target)
                                 if (httpsOnly && target.startsWith("http://", ignoreCase = true)) {
                                     target = target.replaceFirst("http://", "https://", ignoreCase = true)
                                 }
+                                viewModel.clearLiveTelemetry()
                                 viewModel.updateActiveTabUrl(target, target)
                             }
                         }
@@ -693,7 +726,11 @@ fun BrowserWorkspaceScreen(
                             // Apply strict Sandbox parameters
                             configureEngineParameters(settings)
                             settings.javaScriptEnabled = jsEnabled
-                            settings.userAgentString = selectedUa
+                            settings.userAgentString = if (selectedUa.contains("Mozilla/5.0 (Linux; Android 10; K)") || selectedUa.isBlank()) {
+                                shieldsEngine.getRandomizedUserAgent()
+                            } else {
+                                selectedUa
+                            }
 
                             // Block third-party cookies if toggled
                             val cookieManager = CookieManager.getInstance()
@@ -726,13 +763,14 @@ fun BrowserWorkspaceScreen(
 
                             webViewClient = HardenedWebViewClient(
                                 shieldsEngine = shieldsEngine,
-                                onTrackerBlocked = { url -> viewModel.incrementTelemetry(trackers = 1) },
+                                onTrackerBlocked = { url -> viewModel.incrementTelemetry(trackers = 1, url = url) },
                                 onCanvasFaked = { viewModel.incrementTelemetry(canvas = 1) },
                                 onFingerprintMocked = { type -> viewModel.incrementTelemetry(fingerprint = 1) },
                                 onPageStartedCallback = { _ ->
                                     isLoading = true
                                     canGoBack = canGoBack()
                                     canGoForward = canGoForward()
+                                    viewModel.clearLiveTelemetry()
                                 },
                                 onPageFinishedCallback = { url, title ->
                                     isLoading = false
@@ -748,7 +786,11 @@ fun BrowserWorkspaceScreen(
                     update = { webView ->
                         // Dynamically adjust JavaScript execution policy
                         webView.settings.javaScriptEnabled = jsEnabled
-                        webView.settings.userAgentString = selectedUa
+                        webView.settings.userAgentString = if (selectedUa.contains("Mozilla/5.0 (Linux; Android 10; K)") || selectedUa.isBlank()) {
+                            shieldsEngine.getRandomizedUserAgent()
+                        } else {
+                            selectedUa
+                        }
                         
                         val cookieManager = CookieManager.getInstance()
                         cookieManager.setAcceptThirdPartyCookies(webView, !blockThirdPartyCookies)
@@ -798,6 +840,155 @@ fun BrowserWorkspaceScreen(
                     },
                     modifier = Modifier.fillMaxSize()
                 )
+            }
+
+            // --- EXPANDABLE LIVE BLOCKER DIAGNOSTICS BOTTOM SHEET ---
+            if (showBlockedBottomSheet) {
+                // Semi-transparent scrim background overlay
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .clickable { showBlockedBottomSheet = false }
+                )
+
+                // Sliding card container anchored to the bottom
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                        .background(Color.White)
+                        .border(
+                            width = 1.dp,
+                            color = Color(0xFFE2E8F0),
+                            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+                        )
+                        .padding(bottom = 24.dp)
+                        .testTag("blocked_trackers_bottom_sheet")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        // Header handle bar
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .size(width = 40.dp, height = 4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color(0xFFCBD5E1))
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Header details row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2563EB),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Live Shield Diagnostics",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0F172A)
+                                )
+                            }
+                            IconButton(
+                                onClick = { showBlockedBottomSheet = false },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close Panel",
+                                    tint = Color(0xFF64748B),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "The secure browser core has dynamically intercepted and neutralized the following tracking and telemetry payloads on this domain:",
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B),
+                            lineHeight = 16.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        if (liveBlockedDomains.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(140.dp)
+                                    .border(
+                                        width = 1.dp,
+                                        color = Color(0xFFF1F5F9),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .background(Color(0xFFF8FAFC)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No trackers detected on active webpage",
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF94A3B8),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(240.dp)
+                            ) {
+                                items(liveBlockedDomains) { domain ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp)
+                                            .border(
+                                                width = 1.dp,
+                                                color = Color(0xFFF1F5F9),
+                                                shape = RoundedCornerShape(8.dp)
+                                            )
+                                            .background(Color(0xFFF8FAFC))
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Warning,
+                                            contentDescription = "Blocked Tracker",
+                                            tint = Color(0xFFEF4444),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = domain,
+                                            fontSize = 12.sp,
+                                            color = Color(0xFF0F172A),
+                                            fontFamily = FontFamily.Monospace,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

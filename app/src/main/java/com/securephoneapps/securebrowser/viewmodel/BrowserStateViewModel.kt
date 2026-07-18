@@ -81,6 +81,8 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val deGooglingTelemetryEnabled = MutableStateFlow(encryptedPrefs.getBoolean("de_googling_telemetry_enabled", true))
     val httpsOnlyMode = MutableStateFlow(encryptedPrefs.getBoolean("https_only_mode", true))
     val searchEngine = MutableStateFlow(encryptedPrefs.getString("search_engine", "DuckDuckGo") ?: "DuckDuckGo")
+    val customSearchEngineUrl = MutableStateFlow(encryptedPrefs.getString("custom_search_engine_url", "https://duckduckgo.com") ?: "https://duckduckgo.com")
+    val liveBlockedDomains = MutableStateFlow<List<String>>(emptyList())
     val selectedUserAgent = MutableStateFlow(
         encryptedPrefs.getString("custom_user_agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36") ?: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
     )
@@ -338,10 +340,14 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             "https://$trimmed"
         } else {
             val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
-            if (searchEngine.value.lowercase() == "brave") {
-                "https://search.brave.com/search?q=$encodedQuery"
+            val base = customSearchEngineUrl.value
+            if (base.contains("?q=")) {
+                "$base$encodedQuery"
+            } else if (base.contains("?")) {
+                "$base&$encodedQuery"
             } else {
-                "https://html.duckduckgo.com/html/?q=$encodedQuery"
+                val cleanBase = if (base.endsWith("/")) base else "$base/"
+                "${cleanBase}search?q=$encodedQuery"
             }
         }
 
@@ -395,6 +401,11 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         searchEngine.value = engine
     }
 
+    fun updateCustomSearchEngine(newUrl: String) {
+        encryptedPrefs.edit().putString("custom_search_engine_url", newUrl).apply()
+        customSearchEngineUrl.value = newUrl
+    }
+
     fun updateUserAgent(ua: String) {
         encryptedPrefs.edit().putString("custom_user_agent", ua).apply()
         selectedUserAgent.value = ua
@@ -446,7 +457,14 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     // Shield Telemetry Dynamic Counter Logging
-    fun incrementTelemetry(trackers: Int = 0, canvas: Int = 0, fingerprint: Int = 0, pings: Int = 0) {
+    fun incrementTelemetry(trackers: Int = 0, canvas: Int = 0, fingerprint: Int = 0, pings: Int = 0, url: String? = null) {
+        if (url != null) {
+            val host = extractHost(url) ?: url
+            val currentList = liveBlockedDomains.value
+            if (!currentList.contains(host)) {
+                liveBlockedDomains.value = currentList + host
+            }
+        }
         viewModelScope.launch {
             val current = repository.getTelemetry() ?: ShieldTelemetry()
             val updated = current.copy(
@@ -457,6 +475,32 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             )
             repository.insertTelemetry(updated)
         }
+    }
+
+    fun clearLiveTelemetry() {
+        liveBlockedDomains.value = emptyList()
+    }
+
+    private fun extractHost(url: String): String? {
+        val doubleSlash = url.indexOf("//")
+        val start = if (doubleSlash != -1) doubleSlash + 2 else 0
+        if (start >= url.length) return null
+        var end = url.indexOf('/', start)
+        if (end == -1) {
+            end = url.indexOf('?', start)
+        }
+        if (end == -1) {
+            end = url.indexOf('#', start)
+        }
+        if (end == -1) {
+            end = url.length
+        }
+        var host = url.substring(start, end)
+        val portIndex = host.indexOf(':')
+        if (portIndex != -1) {
+            host = host.substring(0, portIndex)
+        }
+        return host.lowercase()
     }
 
     // Automated Clean-Room Execution Wiping Sequence

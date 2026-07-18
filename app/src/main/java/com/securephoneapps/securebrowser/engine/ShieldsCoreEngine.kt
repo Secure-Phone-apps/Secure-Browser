@@ -6,6 +6,61 @@ import java.io.InputStream
 
 class ShieldsCoreEngine {
 
+    companion object {
+        val USER_AGENTS = listOf(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1"
+        )
+    }
+
+    private var uaIndex = 0
+
+    fun getRandomizedUserAgent(): String {
+        synchronized(this) {
+            val ua = USER_AGENTS[uaIndex]
+            uaIndex = (uaIndex + 1) % USER_AGENTS.size
+            return ua
+        }
+    }
+
+    private val trackingParameters = setOf("fbclid", "utm_source", "utm_medium", "gclid", "utm_campaign", "utm_term", "utm_content", "utm_id", "gclsrc")
+
+    fun stripTrackingParameters(url: String): String {
+        try {
+            val queryStart = url.indexOf('?')
+            if (queryStart == -1) return url
+            
+            val baseUrl = url.substring(0, queryStart)
+            val queryAndHash = url.substring(queryStart + 1)
+            
+            val hashStart = queryAndHash.indexOf('#')
+            val queryString = if (hashStart != -1) queryAndHash.substring(0, hashStart) else queryAndHash
+            val fragment = if (hashStart != -1) queryAndHash.substring(hashStart) else ""
+            
+            if (queryString.isEmpty()) return url
+            
+            val cleanedParams = queryString.split('&')
+                .filter { param ->
+                    val eqIdx = param.indexOf('=')
+                    val key = if (eqIdx != -1) param.substring(0, eqIdx) else param
+                    !trackingParameters.contains(key.trim().lowercase())
+                }
+            
+            val newQuery = if (cleanedParams.isNotEmpty()) {
+                "?" + cleanedParams.joinToString("&")
+            } else {
+                ""
+            }
+            
+            return baseUrl + newQuery + fragment
+        } catch (e: Exception) {
+            return url
+        }
+    }
+
     // HashSet for fast O(1) exact and end-with domain checks
     private val blockedDomains = hashSetOf(
         "doubleclick.net",

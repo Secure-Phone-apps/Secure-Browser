@@ -81,6 +81,7 @@ fun GranularControlSettingsScreen(
     val deGoogling by viewModel.deGooglingTelemetryEnabled.collectAsState()
     val httpsOnly by viewModel.httpsOnlyMode.collectAsState()
     val searchEngineVal by viewModel.searchEngine.collectAsState()
+    val customSearchEngineUrlVal by viewModel.customSearchEngineUrl.collectAsState()
     val userAgentVal by viewModel.selectedUserAgent.collectAsState()
 
     var showUaDropdown by remember { mutableStateOf(false) }
@@ -422,6 +423,33 @@ fun GranularControlSettingsScreen(
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = "Custom Search Engine Query URL",
+                        color = Color(0xFF0F172A),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = customSearchEngineUrlVal,
+                        onValueChange = { viewModel.updateCustomSearchEngine(it) },
+                        placeholder = { Text("e.g., https://duckduckgo.com/?q=") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFF0F172A),
+                            unfocusedTextColor = Color(0xFF475569),
+                            focusedContainerColor = Color(0xFFF8FAFC),
+                            unfocusedContainerColor = Color(0xFFF8FAFC),
+                            focusedBorderColor = Color(0xFF2563EB),
+                            unfocusedBorderColor = Color(0xFFE2E8F0)
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("custom_search_engine_input")
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
