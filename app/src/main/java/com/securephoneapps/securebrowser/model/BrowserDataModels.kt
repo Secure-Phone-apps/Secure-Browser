@@ -29,8 +29,39 @@ data class TabInstance(
     val lastActiveTimestamp: Long = System.currentTimeMillis(),
     val parentGroupId: String? = null,
     val isIncognito: Boolean = false,
-    val isSuspendedState: Boolean = false // True if serialized and suspended
-)
+    val isSuspendedState: Boolean = false, // True if serialized and suspended
+    val serializedEngineState: ByteArray? = null
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as TabInstance
+        if (tabId != other.tabId) return false
+        if (currentUrl != other.currentUrl) return false
+        if (title != other.title) return false
+        if (lastActiveTimestamp != other.lastActiveTimestamp) return false
+        if (parentGroupId != other.parentGroupId) return false
+        if (isIncognito != other.isIncognito) return false
+        if (isSuspendedState != other.isSuspendedState) return false
+        if (serializedEngineState != null) {
+            if (other.serializedEngineState == null) return false
+            if (!serializedEngineState.contentEquals(other.serializedEngineState)) return false
+        } else if (other.serializedEngineState != null) return false
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = tabId.hashCode()
+        result = 31 * result + currentUrl.hashCode()
+        result = 31 * result + title.hashCode()
+        result = 31 * result + lastActiveTimestamp.hashCode()
+        result = 31 * result + (parentGroupId?.hashCode() ?: 0)
+        result = 31 * result + isIncognito.hashCode()
+        result = 31 * result + isSuspendedState.hashCode()
+        result = 31 * result + (serializedEngineState?.contentHashCode() ?: 0)
+        return result
+    }
+}
 
 @Entity(tableName = "tab_groups")
 data class TabGroup(

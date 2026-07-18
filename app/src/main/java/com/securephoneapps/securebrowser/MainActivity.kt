@@ -163,6 +163,40 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+fun configureEngineParameters(settings: WebSettings) {
+    settings.apply {
+        allowFileAccess = false
+        allowContentAccess = false
+        databaseEnabled = false
+        domStorageEnabled = true
+        useWideViewPort = true
+        loadWithOverviewMode = true
+        savePassword = false
+        saveFormData = false
+        mediaPlaybackRequiresUserGesture = true
+        mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        
+        // Geolocation block
+        setGeolocationEnabled(false)
+
+        // Disable WebGL via reflection
+        try {
+            val setWebGLEnabledMethod = settings.javaClass.getMethod("setWebGLEnabled", Boolean::class.java)
+            setWebGLEnabledMethod.invoke(settings, false)
+        } catch (e: Exception) {
+            // WebGL reflection not supported or unnecessary on this target SDK
+        }
+
+        // Enable Safe Browsing via reflection
+        try {
+            val setSafeBrowsingEnabledMethod = settings.javaClass.getMethod("setSafeBrowsingEnabled", Boolean::class.java)
+            setSafeBrowsingEnabledMethod.invoke(settings, true)
+        } catch (e: Exception) {
+            // Safe Browsing reflection not supported
+        }
+    }
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun BrowserWorkspaceScreen(
@@ -394,20 +428,9 @@ fun BrowserWorkspaceScreen(
                             onWebViewBound(this)
 
                             // Apply strict Sandbox parameters
-                            settings.apply {
-                                javaScriptEnabled = jsEnabled
-                                allowFileAccess = false
-                                allowContentAccess = false
-                                databaseEnabled = false
-                                domStorageEnabled = true
-                                useWideViewPort = true
-                                loadWithOverviewMode = true
-                                savePassword = false
-                                saveFormData = false
-                                mediaPlaybackRequiresUserGesture = true
-                                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                                userAgentString = selectedUa
-                            }
+                            configureEngineParameters(settings)
+                            settings.javaScriptEnabled = jsEnabled
+                            settings.userAgentString = selectedUa
 
                             // Block third-party cookies if toggled
                             val cookieManager = CookieManager.getInstance()
@@ -439,9 +462,35 @@ fun BrowserWorkspaceScreen(
                         val cookieManager = CookieManager.getInstance()
                         cookieManager.setAcceptThirdPartyCookies(webView, !blockThirdPartyCookies)
 
-                        // Trigger loading if url is modified
-                        if (webView.url != activeTab.currentUrl) {
-                            webView.loadUrl(activeTab.currentUrl)
+                        if (activeTab != null) {
+                            val oldTabId = webView.tag as? String
+                            if (oldTabId != activeTab.tabId) {
+                                // 1. Save the previous tab's state before switching
+                                if (oldTabId != null) {
+                                    viewModel.saveTabState(oldTabId, webView)
+                                }
+                                
+                                // 2. Update tag to current active tab ID
+                                webView.tag = activeTab.tabId
+                                
+                                // 3. Restore serialized state if present, otherwise load url
+                                val state = activeTab.serializedEngineState
+                                if (state != null) {
+                                    val bundle = viewModel.bytesToBundle(state)
+                                    if (bundle != null) {
+                                        webView.restoreState(bundle)
+                                    } else {
+                                        webView.loadUrl(activeTab.currentUrl)
+                                    }
+                                } else {
+                                    webView.loadUrl(activeTab.currentUrl)
+                                }
+                            } else {
+                                // If the active tab ID is the same but the URL has changed in the viewModel, load it
+                                if (webView.url != activeTab.currentUrl && activeTab.currentUrl.isNotEmpty()) {
+                                    webView.loadUrl(activeTab.currentUrl)
+                                }
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxSize()

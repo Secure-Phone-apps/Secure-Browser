@@ -52,67 +52,20 @@ class HardenedWebViewClient(
         // Hard drop connection immediately on certificate validation failures
         handler?.cancel()
 
-        val secureErrorHtml = """
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <style>
-                    body {
-                        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-                        background-color: #0D0D0D;
-                        color: #FF453A;
-                        text-align: center;
-                        padding: 32px 16px;
-                        margin: 0;
-                    }
-                    .container {
-                        max-width: 480px;
-                        margin: 40px auto 0 auto;
-                        border: 1px solid #FF453A;
-                        border-radius: 16px;
-                        padding: 32px;
-                        background-color: #161616;
-                        box-shadow: 0 8px 30px rgba(0,0,0,0.7);
-                    }
-                    h1 { font-size: 22px; margin-bottom: 12px; font-weight: 700; letter-spacing: -0.5px; }
-                    p { color: #AEAEB2; line-height: 1.5; font-size: 14px; margin: 8px 0; }
-                    .badge {
-                        display: inline-block;
-                        background-color: rgba(255, 69, 58, 0.15);
-                        color: #FF453A;
-                        border: 1px solid #FF453A;
-                        padding: 6px 14px;
-                        border-radius: 20px;
-                        font-size: 11px;
-                        font-weight: 700;
-                        text-transform: uppercase;
-                        margin-bottom: 24px;
-                        letter-spacing: 0.5px;
-                    }
-                    .icon {
-                        font-size: 40px;
-                        margin-bottom: 8px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="icon">🛡️</div>
-                    <div class="badge">MITM Protection Active</div>
-                    <h1>SECURE CONNECTION BLOCKED</h1>
-                    <p>
-                        The Secure Browser engine detected an invalid, expired, or untrusted SSL certificate for this host.
-                    </p>
-                    <p style="color: #8E8E93; font-size: 13px; margin-top: 16px;">
-                        To protect your sensitive credentials, local identifiers, and browser safety, fallback options have been completely locked out.
-                    </p>
-                </div>
-            </body>
-            </html>
-        """.trimIndent()
-
-        view?.loadDataWithBaseURL(null, secureErrorHtml, "text/html", "UTF-8", null)
+        // Securely destroy the view hierarchy and remove it from parent to completely eliminate MITM or sniffing vulnerabilities
+        view?.post {
+            try {
+                view.stopLoading()
+                view.clearHistory()
+                view.clearCache(true)
+                view.loadUrl("about:blank")
+                val parent = view.parent as? android.view.ViewGroup
+                parent?.removeView(view)
+                view.destroy()
+            } catch (e: Exception) {
+                // Safeguard against runtime exceptions during disposal
+            }
+        }
     }
 
     private val fingerprintInjectionScript: String = """
@@ -120,6 +73,19 @@ class HardenedWebViewClient(
             try {
                 // 1. Webdriver masking
                 Object.defineProperty(navigator, 'webdriver', { get: () => false });
+
+                // WebRTC Isolation & IP leak prevention
+                if (window.RTCPeerConnection || window.webkitRTCPeerConnection) {
+                    if (window.FingerprintShield) {
+                        window.FingerprintShield.onFingerprintMockTriggered("webrtc");
+                    }
+                    try {
+                        Object.defineProperty(window, 'RTCPeerConnection', { value: undefined, writable: false });
+                        Object.defineProperty(window, 'webkitRTCPeerConnection', { value: undefined, writable: false });
+                        Object.defineProperty(window, 'RTCIceCandidate', { value: undefined, writable: false });
+                        Object.defineProperty(window, 'RTCSessionDescription', { value: undefined, writable: false });
+                    } catch (webrtcErr) {}
+                }
 
                 // 2. Canvas Fingerprint protection via slight noise injection
                 if (HTMLCanvasElement.prototype.getContext) {

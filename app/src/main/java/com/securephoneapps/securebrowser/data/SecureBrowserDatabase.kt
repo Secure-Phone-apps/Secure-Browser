@@ -108,7 +108,7 @@ interface ShieldTelemetryDao {
         TabGroup::class,
         ShieldTelemetry::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class SecureBrowserDatabase : RoomDatabase() {

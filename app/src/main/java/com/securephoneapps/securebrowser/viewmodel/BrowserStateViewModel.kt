@@ -213,6 +213,41 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun bundleToBytes(bundle: android.os.Bundle): ByteArray? {
+        val parcel = android.os.Parcel.obtain()
+        return try {
+            parcel.writeBundle(bundle)
+            parcel.marshall()
+        } catch (e: Exception) {
+            null
+        } finally {
+            parcel.recycle()
+        }
+    }
+
+    fun bytesToBundle(bytes: ByteArray): android.os.Bundle? {
+        val parcel = android.os.Parcel.obtain()
+        return try {
+            parcel.unmarshall(bytes, 0, bytes.size)
+            parcel.setDataPosition(0)
+            parcel.readBundle(android.os.Bundle::class.java.classLoader)
+        } catch (e: Exception) {
+            null
+        } finally {
+            parcel.recycle()
+        }
+    }
+
+    fun saveTabState(tabId: String, webView: WebView) {
+        val tab = _tabsState.value.find { it.tabId == tabId } ?: return
+        val bundle = android.os.Bundle()
+        webView.saveState(bundle)
+        val bytes = bundleToBytes(bundle)
+        viewModelScope.launch {
+            repository.insertTab(tab.copy(serializedEngineState = bytes))
+        }
+    }
+
     // Search Engine & URL Purifier
     fun parseUrlOrSearch(input: String): String {
         val trimmed = input.trim()
