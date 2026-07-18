@@ -26,6 +26,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.net.URI
 import java.net.URLEncoder
 import java.util.UUID
@@ -35,6 +37,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     private val context = application.applicationContext
     private val database = SecureBrowserDatabase.getInstance(context)
     private val repository = BrowserRepository(database)
+    private val databaseMutex = Mutex()
 
     // Master Key for Encrypted Shared Preferences
     private val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
@@ -265,8 +268,10 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         webView.saveState(bundle)
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                val bytes = bundleToBytes(bundle)
-                repository.insertTab(tab.copy(serializedEngineState = bytes))
+                databaseMutex.withLock {
+                    val bytes = bundleToBytes(bundle)
+                    repository.insertTab(tab.copy(serializedEngineState = bytes))
+                }
             }
         }
     }
@@ -277,14 +282,18 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         webView.saveState(bundle)
         viewModelScope.launch {
             val bytes = withContext(Dispatchers.IO) {
-                bundleToBytes(bundle)
+                databaseMutex.withLock {
+                    bundleToBytes(bundle)
+                }
             }
             withContext(Dispatchers.IO) {
-                val updated = tab.copy(
-                    serializedEngineState = bytes,
-                    isSuspendedState = true
-                )
-                repository.insertTab(updated)
+                databaseMutex.withLock {
+                    val updated = tab.copy(
+                        serializedEngineState = bytes,
+                        isSuspendedState = true
+                    )
+                    repository.insertTab(updated)
+                }
             }
             // Safely clear content on UI thread
             webView.post {
@@ -303,7 +312,9 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         val bytes = tab.serializedEngineState ?: return
         viewModelScope.launch {
             val bundle: android.os.Bundle? = withContext(Dispatchers.IO) {
-                bytesToBundle(bytes)
+                databaseMutex.withLock {
+                    bytesToBundle(bytes)
+                }
             }
             if (bundle != null) {
                 withContext(Dispatchers.Main) {

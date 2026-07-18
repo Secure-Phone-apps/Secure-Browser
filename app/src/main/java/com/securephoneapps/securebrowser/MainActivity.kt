@@ -235,7 +235,7 @@ fun configureEngineParameters(settings: WebSettings) {
     }
 }
 
-class SecureDownloadManager(
+class SecureContainerDownloadListener(
     private val context: android.content.Context,
     private val scope: CoroutineScope
 ) : DownloadListener {
@@ -688,7 +688,7 @@ fun BrowserWorkspaceScreen(
                             webViewInstance = this
 
                             // Encrypted, isolated download interceptor pipeline
-                            setDownloadListener(SecureDownloadManager(context, coroutineScope))
+                            setDownloadListener(SecureContainerDownloadListener(context, coroutineScope))
 
                             // Apply strict Sandbox parameters
                             configureEngineParameters(settings)

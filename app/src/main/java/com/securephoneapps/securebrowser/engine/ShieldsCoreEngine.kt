@@ -55,35 +55,58 @@ class ShieldsCoreEngine {
         blockedKeywords.forEach { addToBloom(it) }
     }
 
-    // Three independent polynomial hash signatures to eliminate false-positive URL blocking
-    private fun hash1(item: String): Int {
-        var hash = 17
-        for (i in 0 until item.length) {
-            hash = hash * 31 + item[i].code
-        }
-        return hash
-    }
+    // MurmurHash3 32-bit implementation with configurable seed to eliminate false-positive URL matches
+    private fun murmurHash3(data: String, seed: Int): Int {
+        val bytes = data.toByteArray(Charsets.UTF_8)
+        val length = bytes.size
+        var h1 = seed
+        val c1 = 0xcc9e2d51.toInt()
+        val c2 = 0x1b873593
 
-    private fun hash2(item: String): Int {
-        var hash = 19
-        for (i in 0 until item.length) {
-            hash = hash * 101 + item[i].code
-        }
-        return hash
-    }
+        val nblocks = length / 4
+        for (i in 0 until nblocks) {
+            val index = i * 4
+            var k1 = (bytes[index].toInt() and 0xff) or
+                    ((bytes[index + 1].toInt() and 0xff) shl 8) or
+                    ((bytes[index + 2].toInt() and 0xff) shl 16) or
+                    ((bytes[index + 3].toInt() and 0xff) shl 24)
 
-    private fun hash3(item: String): Int {
-        var hash = 23
-        for (i in 0 until item.length) {
-            hash = hash * 131 + item[i].code
+            k1 *= c1
+            k1 = (k1 shl 15) or (k1 ushr 17)
+            k1 *= c2
+
+            h1 = h1 xor k1
+            h1 = (h1 shl 13) or (h1 ushr 19)
+            h1 = h1 * 5 + 0xe6546b64.toInt()
         }
-        return hash
+
+        var k1 = 0
+        val tailStart = nblocks * 4
+        val remainder = length - tailStart
+        if (remainder >= 3) k1 = k1 xor ((bytes[tailStart + 2].toInt() and 0xff) shl 16)
+        if (remainder >= 2) k1 = k1 xor ((bytes[tailStart + 1].toInt() and 0xff) shl 8)
+        if (remainder >= 1) {
+            k1 = k1 xor (bytes[tailStart].toInt() and 0xff)
+            k1 *= c1
+            k1 = (k1 shl 15) or (k1 ushr 17)
+            k1 *= c2
+            h1 = h1 xor k1
+        }
+
+        h1 = h1 xor length
+        h1 = h1 xor (h1 ushr 16)
+        h1 *= 0x85ebca6b.toInt()
+        h1 = h1 xor (h1 ushr 13)
+        h1 *= 0xc2b2ae35.toInt()
+        h1 = h1 xor (h1 ushr 16)
+
+        return h1
     }
 
     private fun addToBloom(item: String) {
-        val h1 = hash1(item)
-        val h2 = hash2(item)
-        val h3 = hash3(item)
+        val h1 = murmurHash3(item, 0x12345678)
+        val h2 = murmurHash3(item, 0x9abcdef0.toInt())
+        val h3 = murmurHash3(item, 0x55555555)
         
         val bit1 = (h1 and 0x7FFFFFFF) % bloomFilterSize
         val bit2 = (h2 and 0x7FFFFFFF) % bloomFilterSize
@@ -95,9 +118,9 @@ class ShieldsCoreEngine {
     }
 
     private fun checkBloom(item: String): Boolean {
-        val h1 = hash1(item)
-        val h2 = hash2(item)
-        val h3 = hash3(item)
+        val h1 = murmurHash3(item, 0x12345678)
+        val h2 = murmurHash3(item, 0x9abcdef0.toInt())
+        val h3 = murmurHash3(item, 0x55555555)
         
         val bit1 = (h1 and 0x7FFFFFFF) % bloomFilterSize
         val bit2 = (h2 and 0x7FFFFFFF) % bloomFilterSize
@@ -107,6 +130,62 @@ class ShieldsCoreEngine {
         val val2 = (bloomBitSet[bit2 / 64] and (1L shl (bit2 % 64))) != 0L
         val val3 = (bloomBitSet[bit3 / 64] and (1L shl (bit3 % 64))) != 0L
         return val1 && val2 && val3
+    }
+
+    /**
+     * Companion stream reader capable of processing compressed rulesets dynamically at runtime.
+     */
+    fun importCompressedRuleset(input: InputStream) {
+        try {
+            val bufferedInput = java.io.BufferedInputStream(input)
+            bufferedInput.mark(2)
+            val header = ByteArray(2)
+            val readBytes = bufferedInput.read(header)
+            bufferedInput.reset()
+            
+            val isGzip = readBytes == 2 && 
+                (header[0].toInt() and 0xFF == 0x1f) && 
+                (header[1].toInt() and 0xFF == 0x8b)
+
+            val finalStream = if (isGzip) {
+                java.util.zip.GZIPInputStream(bufferedInput)
+            } else {
+                bufferedInput
+            }
+
+            val reader = java.io.BufferedReader(java.io.InputStreamReader(finalStream, Charsets.UTF_8))
+            var line = reader.readLine()
+            while (line != null) {
+                val trimmed = line.trim()
+                if (trimmed.isNotEmpty() && !trimmed.startsWith("#") && !trimmed.startsWith("!")) {
+                    var cleanRule = trimmed
+                    if (cleanRule.startsWith("||")) {
+                        cleanRule = cleanRule.substring(2)
+                    }
+                    val caretIdx = cleanRule.indexOf('^')
+                    if (caretIdx != -1) {
+                        cleanRule = cleanRule.substring(0, caretIdx)
+                    }
+                    val slashIdx = cleanRule.indexOf('/')
+                    if (slashIdx != -1) {
+                        cleanRule = cleanRule.substring(0, slashIdx)
+                    }
+                    cleanRule = cleanRule.trim().lowercase()
+                    if (cleanRule.isNotEmpty()) {
+                        if (cleanRule.contains(".")) {
+                            blockedDomains.add(cleanRule)
+                            addToBloom(cleanRule)
+                        } else {
+                            blockedKeywords.add(cleanRule)
+                            addToBloom(cleanRule)
+                        }
+                    }
+                }
+                line = reader.readLine()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     /**
