@@ -35,12 +35,21 @@ jobs:
             echo "GEMINI_API_KEY=dummy_key" > .env
           fi
 
-      - name: Decode Debug Keystore
+      - name: Decode or Generate Debug Keystore
         run: |
           if [ -f debug.keystore.base64 ]; then
+            echo "Decoding debug.keystore from base64..."
             base64 -d debug.keystore.base64 > debug.keystore
           elif [ -f debug.keystore.base64.txt ]; then
+            echo "Decoding debug.keystore from base64.txt..."
             base64 -d debug.keystore.base64.txt > debug.keystore
+          fi
+          
+          if [ ! -f debug.keystore ]; then
+            echo "debug.keystore not found, generating a new one with keytool..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          else
+            echo "debug.keystore successfully prepared."
           fi
 
       - name: Run Unit Tests
