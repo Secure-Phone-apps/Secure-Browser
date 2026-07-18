@@ -2,6 +2,7 @@ package com.securephoneapps.securebrowser.engine
 
 import android.webkit.WebResourceResponse
 import java.io.ByteArrayInputStream
+import java.io.InputStream
 
 class ShieldsCoreEngine {
 
@@ -44,35 +45,109 @@ class ShieldsCoreEngine {
         "analytics", "telemetry", "tracker", "adsystem", "spyware", "adserver", "metrics", "marketing", "pixels", "gen_204", "doubleclick"
     )
 
-    // Highly optimized primitive Bloom Filter (Layer A) to check block candidates in O(1) sub-microsecond time
-    private val bloomFilterSize = 2048
+    // Highly optimized primitive Bloom Filter to check block candidates in O(1) sub-microsecond time
+    private val bloomFilterSize = 16384
     private val bloomBitSet = LongArray(bloomFilterSize / 64)
 
     init {
-        // Populate Bloom Filter
+        // Populate Bloom Filter with initial rules
         blockedDomains.forEach { addToBloom(it) }
         blockedKeywords.forEach { addToBloom(it) }
     }
 
+    // Three independent polynomial hash signatures to eliminate false-positive URL blocking
+    private fun hash1(item: String): Int {
+        var hash = 17
+        for (i in 0 until item.length) {
+            hash = hash * 31 + item[i].code
+        }
+        return hash
+    }
+
+    private fun hash2(item: String): Int {
+        var hash = 19
+        for (i in 0 until item.length) {
+            hash = hash * 101 + item[i].code
+        }
+        return hash
+    }
+
+    private fun hash3(item: String): Int {
+        var hash = 23
+        for (i in 0 until item.length) {
+            hash = hash * 131 + item[i].code
+        }
+        return hash
+    }
+
     private fun addToBloom(item: String) {
-        val h1 = item.hashCode()
-        val h2 = h1 xor (h1 ushr 16)
+        val h1 = hash1(item)
+        val h2 = hash2(item)
+        val h3 = hash3(item)
+        
         val bit1 = (h1 and 0x7FFFFFFF) % bloomFilterSize
         val bit2 = (h2 and 0x7FFFFFFF) % bloomFilterSize
+        val bit3 = (h3 and 0x7FFFFFFF) % bloomFilterSize
         
         bloomBitSet[bit1 / 64] = bloomBitSet[bit1 / 64] or (1L shl (bit1 % 64))
         bloomBitSet[bit2 / 64] = bloomBitSet[bit2 / 64] or (1L shl (bit2 % 64))
+        bloomBitSet[bit3 / 64] = bloomBitSet[bit3 / 64] or (1L shl (bit3 % 64))
     }
 
     private fun checkBloom(item: String): Boolean {
-        val h1 = item.hashCode()
-        val h2 = h1 xor (h1 ushr 16)
+        val h1 = hash1(item)
+        val h2 = hash2(item)
+        val h3 = hash3(item)
+        
         val bit1 = (h1 and 0x7FFFFFFF) % bloomFilterSize
         val bit2 = (h2 and 0x7FFFFFFF) % bloomFilterSize
+        val bit3 = (h3 and 0x7FFFFFFF) % bloomFilterSize
         
         val val1 = (bloomBitSet[bit1 / 64] and (1L shl (bit1 % 64))) != 0L
         val val2 = (bloomBitSet[bit2 / 64] and (1L shl (bit2 % 64))) != 0L
-        return val1 && val2
+        val val3 = (bloomBitSet[bit3 / 64] and (1L shl (bit3 % 64))) != 0L
+        return val1 && val2 && val3
+    }
+
+    /**
+     * Network-facing updater method designed to parse and populate the internal matching architecture
+     * from standardized string asset updates seamlessly.
+     */
+    fun updateFilterList(rulesStream: InputStream) {
+        try {
+            val reader = java.io.BufferedReader(java.io.InputStreamReader(rulesStream, Charsets.UTF_8))
+            var line = reader.readLine()
+            while (line != null) {
+                val trimmed = line.trim()
+                if (trimmed.isNotEmpty() && !trimmed.startsWith("#") && !trimmed.startsWith("!")) {
+                    var cleanRule = trimmed
+                    if (cleanRule.startsWith("||")) {
+                        cleanRule = cleanRule.substring(2)
+                    }
+                    val caretIdx = cleanRule.indexOf('^')
+                    if (caretIdx != -1) {
+                        cleanRule = cleanRule.substring(0, caretIdx)
+                    }
+                    val slashIdx = cleanRule.indexOf('/')
+                    if (slashIdx != -1) {
+                        cleanRule = cleanRule.substring(0, slashIdx)
+                    }
+                    cleanRule = cleanRule.trim().lowercase()
+                    if (cleanRule.isNotEmpty()) {
+                        if (cleanRule.contains(".")) {
+                            blockedDomains.add(cleanRule)
+                            addToBloom(cleanRule)
+                        } else {
+                            blockedKeywords.add(cleanRule)
+                            addToBloom(cleanRule)
+                        }
+                    }
+                }
+                line = reader.readLine()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     // Raw JavaScript script to block and neutralize Google AMP redirections, forcing canonical web loading

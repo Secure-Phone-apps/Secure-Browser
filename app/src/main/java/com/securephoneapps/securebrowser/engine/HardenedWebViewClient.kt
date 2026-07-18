@@ -8,6 +8,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 
 class FingerprintShieldBridge(
     private val onCanvasFaked: () -> Unit,
@@ -28,8 +30,12 @@ class HardenedWebViewClient(
     private val shieldsEngine: ShieldsCoreEngine,
     private val onTrackerBlocked: (url: String) -> Unit,
     private val onCanvasFaked: () -> Unit,
-    private val onFingerprintMocked: (type: String) -> Unit
+    private val onFingerprintMocked: (type: String) -> Unit,
+    private val onPageStartedCallback: (url: String) -> Unit = {},
+    private val onPageFinishedCallback: (url: String, title: String) -> Unit = { _, _ -> }
 ) : WebViewClient() {
+
+    private val registeredWebViews = mutableSetOf<Int>()
 
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
         val url = request?.url?.toString() ?: return null
@@ -167,17 +173,40 @@ class HardenedWebViewClient(
         })();
     """.trimIndent()
 
+    private fun registerDocumentStartScripts(view: WebView) {
+        val hash = System.identityHashCode(view)
+        if (registeredWebViews.contains(hash)) return
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            try {
+                WebViewCompat.addDocumentStartJavaScript(view, fingerprintInjectionScript, setOf("*"))
+                WebViewCompat.addDocumentStartJavaScript(view, shieldsEngine.ampNeutralizerScript, setOf("*"))
+                registeredWebViews.add(hash)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
-        // Inject early shields
-        view?.evaluateJavascript(fingerprintInjectionScript, null)
-        view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
+        if (view != null) {
+            registerDocumentStartScripts(view)
+        }
+        // Force-inject early scripts as a fallback if synchronous script binding is not supported
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            view?.evaluateJavascript(fingerprintInjectionScript, null)
+            view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
+        }
+        url?.let { onPageStartedCallback(it) }
     }
 
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
-        // Reinforce injection on completion
+        // Reinforce injection on completion just in case of iframe or state resets
         view?.evaluateJavascript(fingerprintInjectionScript, null)
         view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
+        val title = view?.title ?: ""
+        url?.let { onPageFinishedCallback(it, title) }
     }
 }

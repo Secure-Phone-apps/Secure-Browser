@@ -11,6 +11,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -98,6 +100,24 @@ import com.securephoneapps.securebrowser.engine.ShieldsCoreEngine
 import com.securephoneapps.securebrowser.ui.AdvancedTabManagerScreen
 import com.securephoneapps.securebrowser.ui.GranularControlSettingsScreen
 import com.securephoneapps.securebrowser.viewmodel.BrowserStateViewModel
+import android.widget.Toast
+import android.webkit.DownloadListener
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.CipherOutputStream
+import javax.crypto.spec.GCMParameterSpec
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import java.security.KeyStore
 
 class MainActivity : ComponentActivity() {
 
@@ -153,6 +173,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @SuppressLint("GestureBackNavigation")
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (activeWebView != null && activeWebView!!.canGoBack()) {
@@ -196,6 +217,150 @@ fun configureEngineParameters(settings: WebSettings) {
         } catch (e: Exception) {
             // Safe Browsing reflection not supported
         }
+
+        // Disable WebRTC via hidden/internal settings reflection or feature flags
+        try {
+            val methods = settings.javaClass.methods
+            for (method in methods) {
+                if (method.name.lowercase().contains("webrtc") || method.name.lowercase().contains("peerconnection")) {
+                    if (method.parameterTypes.size == 1 && method.parameterTypes[0] == Boolean::class.java) {
+                        method.isAccessible = true
+                        method.invoke(settings, false)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Fallback for standard SDK targets
+        }
+    }
+}
+
+class SecureDownloadManager(
+    private val context: android.content.Context,
+    private val scope: CoroutineScope
+) : DownloadListener {
+
+    private val KEY_ALIAS = "secure_browser_download_key"
+    private val ANDROID_KEYSTORE = "AndroidKeyStore"
+
+    private fun getOrCreateSecretKey(): SecretKey {
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val existingKey = keyStore.getKey(KEY_ALIAS, null) as? SecretKey
+        if (existingKey != null) {
+            return existingKey
+        }
+
+        val keyGenerator = KeyGenerator.getInstance(
+            KeyProperties.KEY_ALGORITHM_AES,
+            ANDROID_KEYSTORE
+        )
+        val spec = KeyGenParameterSpec.Builder(
+            KEY_ALIAS,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+            .build()
+        keyGenerator.init(spec)
+        return keyGenerator.generateKey()
+    }
+
+    override fun onDownloadStart(
+        url: String?,
+        userAgent: String?,
+        contentDisposition: String?,
+        mimetype: String?,
+        contentLength: Long
+    ) {
+        if (url == null) return
+        
+        Toast.makeText(context, "Secure Download Started...", Toast.LENGTH_SHORT).show()
+
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val uri = URL(url)
+                    val connection = uri.openConnection() as HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.setRequestProperty("User-Agent", userAgent)
+                    connection.connect()
+
+                    if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                        val fileName = getFileName(url, contentDisposition, mimetype)
+                        val downloadsDir = File(context.filesDir, "secure_downloads")
+                        if (!downloadsDir.exists()) {
+                            downloadsDir.mkdirs()
+                        }
+                        val outputFile = File(downloadsDir, fileName)
+                        if (outputFile.exists()) {
+                            outputFile.delete()
+                        }
+
+                        val secretKey = getOrCreateSecretKey()
+                        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                        cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+                        val iv = cipher.iv // 12-byte IV for GCM
+
+                        java.io.FileOutputStream(outputFile).use { fos ->
+                            // Write IV first so we can retrieve it for decryption
+                            fos.write(iv)
+                            
+                            val cipherOutputStream = CipherOutputStream(fos, cipher)
+                            cipherOutputStream.use { cos ->
+                                connection.inputStream.use { input ->
+                                    val buffer = ByteArray(8192)
+                                    var bytesRead = input.read(buffer)
+                                    while (bytesRead != -1) {
+                                        cos.write(buffer, 0, bytesRead)
+                                        bytesRead = input.read(buffer)
+                                    }
+                                }
+                            }
+                        }
+
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Downloaded securely to isolated storage: $fileName", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Secure Download failed: Server returned ${connection.responseCode}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Secure Download error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun getFileName(url: String, contentDisposition: String?, mimeType: String?): String {
+        var filename = ""
+        if (contentDisposition != null) {
+            val index = contentDisposition.indexOf("filename=")
+            if (index != -1) {
+                filename = contentDisposition.substring(index + 9).trim()
+                if (filename.startsWith("\"") && filename.endsWith("\"")) {
+                    filename = filename.substring(1, filename.length - 1)
+                }
+            }
+        }
+        if (filename.isEmpty()) {
+            val lastSlash = url.lastIndexOf('/')
+            filename = if (lastSlash != -1) {
+                url.substring(lastSlash + 1)
+            } else {
+                "download_file"
+            }
+            val questionMark = filename.indexOf('?')
+            if (questionMark != -1) {
+                filename = filename.substring(0, questionMark)
+            }
+        }
+        return filename.ifEmpty { "downloaded_asset" }
     }
 }
 
@@ -218,9 +383,16 @@ fun BrowserWorkspaceScreen(
     var isLoading by remember { mutableStateOf(false) }
     var sslSecured by remember { mutableStateOf(true) }
 
+    var canGoBack by remember { mutableStateOf(false) }
+    var canGoForward by remember { mutableStateOf(false) }
+    var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+    var showLinkContextMenu by remember { mutableStateOf(false) }
+    var longPressedUrl by remember { mutableStateOf<String?>(null) }
+
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val shieldsEngine = remember { ShieldsCoreEngine() }
+    val coroutineScope = rememberCoroutineScope()
 
     // Synchronize Input Field when active tab switches or navigates
     LaunchedEffect(activeTab?.currentUrl) {
@@ -334,19 +506,36 @@ fun BrowserWorkspaceScreen(
             ) {
                 IconButton(
                     onClick = {
-                        viewModel.navigateTo(BrowserStateViewModel.Screen.Browser)
+                        if (canGoBack) {
+                            webViewInstance?.goBack()
+                        }
                     },
+                    enabled = canGoBack,
                     modifier = Modifier.testTag("nav_back")
                 ) {
-                    Icon(Icons.Default.ArrowBackIosNew, contentDescription = "Back", tint = Color(0xFF475569), modifier = Modifier.size(18.dp))
+                    Icon(
+                        imageVector = Icons.Default.ArrowBackIosNew,
+                        contentDescription = "Back",
+                        tint = if (canGoBack) Color(0xFF475569) else Color(0xFFCBD5E1),
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
 
                 IconButton(
                     onClick = {
-                        // Forward Navigation
-                    }
+                        if (canGoForward) {
+                            webViewInstance?.goForward()
+                        }
+                    },
+                    enabled = canGoForward,
+                    modifier = Modifier.testTag("nav_forward")
                 ) {
-                    Icon(Icons.Default.ArrowForwardIos, contentDescription = "Forward", tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
+                    Icon(
+                        imageVector = Icons.Default.ArrowForwardIos,
+                        contentDescription = "Forward",
+                        tint = if (canGoForward) Color(0xFF475569) else Color(0xFFCBD5E1),
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
 
                 // Central high-contrast Blue Home action
@@ -385,6 +574,74 @@ fun BrowserWorkspaceScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            if (showLinkContextMenu && longPressedUrl != null) {
+                AlertDialog(
+                    onDismissRequest = {
+                        showLinkContextMenu = false
+                        longPressedUrl = null
+                    },
+                    title = {
+                        Text(
+                            text = "Link Options",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A)
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = longPressedUrl!!,
+                                color = Color(0xFF64748B),
+                                fontSize = 12.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // Option 1: Open in New Tab
+                            Button(
+                                onClick = {
+                                    viewModel.createNewTab(url = longPressedUrl!!)
+                                    showLinkContextMenu = false
+                                    longPressedUrl = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+                            ) {
+                                Text("Open in New Tab", color = Color.White)
+                            }
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            // Option 2: Open in New Tab Group
+                            Button(
+                                onClick = {
+                                    viewModel.createNewTabInGroup(url = longPressedUrl!!)
+                                    showLinkContextMenu = false
+                                    longPressedUrl = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669))
+                            ) {
+                                Text("Open in New Tab Group", color = Color.White)
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                showLinkContextMenu = false
+                                longPressedUrl = null
+                            }
+                        ) {
+                            Text("Cancel", color = Color(0xFF64748B))
+                        }
+                    },
+                    containerColor = Color.White
+                )
+            }
+
             if (activeTab == null || activeTab.currentUrl == "about:blank") {
                 // -- BRAVE-STYLE PRIVACY DASHBOARD --
                 BravePrivacyDashboard(viewModel = viewModel)
@@ -428,6 +685,10 @@ fun BrowserWorkspaceScreen(
                     factory = { context ->
                         WebView(context).apply {
                             onWebViewBound(this)
+                            webViewInstance = this
+
+                            // Encrypted, isolated download interceptor pipeline
+                            setDownloadListener(SecureDownloadManager(context, coroutineScope))
 
                             // Apply strict Sandbox parameters
                             configureEngineParameters(settings)
@@ -448,11 +709,39 @@ fun BrowserWorkspaceScreen(
                                 "FingerprintShield"
                             )
 
+                            setOnLongClickListener { v ->
+                                val result = (v as WebView).hitTestResult
+                                if (result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || 
+                                    result.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                                    val url = result.extra
+                                    if (!url.isNullOrBlank()) {
+                                        longPressedUrl = url
+                                        showLinkContextMenu = true
+                                    }
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+
                             webViewClient = HardenedWebViewClient(
                                 shieldsEngine = shieldsEngine,
                                 onTrackerBlocked = { url -> viewModel.incrementTelemetry(trackers = 1) },
                                 onCanvasFaked = { viewModel.incrementTelemetry(canvas = 1) },
-                                onFingerprintMocked = { type -> viewModel.incrementTelemetry(fingerprint = 1) }
+                                onFingerprintMocked = { type -> viewModel.incrementTelemetry(fingerprint = 1) },
+                                onPageStartedCallback = { _ ->
+                                    isLoading = true
+                                    canGoBack = canGoBack()
+                                    canGoForward = canGoForward()
+                                },
+                                onPageFinishedCallback = { url, title ->
+                                    isLoading = false
+                                    canGoBack = canGoBack()
+                                    canGoForward = canGoForward()
+                                    
+                                    // Handle internal navigation state syncing
+                                    viewModel.updateActiveTabUrl(url, title)
+                                }
                             )
                         }
                     },
@@ -489,10 +778,22 @@ fun BrowserWorkspaceScreen(
                                 }
                             } else {
                                 // If the active tab ID is the same but the URL has changed in the viewModel, load it
-                                if (webView.url != activeTab.currentUrl && activeTab.currentUrl.isNotEmpty()) {
+                                fun urlsMatch(url1: String?, url2: String?): Boolean {
+                                    if (url1 == url2) return true
+                                    if (url1 == null || url2 == null) return false
+                                    val u1 = url1.trim().trimEnd('/')
+                                    val u2 = url2.trim().trimEnd('/')
+                                    return u1.equals(u2, ignoreCase = true)
+                                }
+
+                                if (!urlsMatch(webView.url, activeTab.currentUrl) && activeTab.currentUrl.isNotEmpty()) {
                                     webView.loadUrl(activeTab.currentUrl)
                                 }
                             }
+                            
+                            // Synchronize back/forward status
+                            canGoBack = webView.canGoBack()
+                            canGoForward = webView.canGoForward()
                         }
                     },
                     modifier = Modifier.fillMaxSize()

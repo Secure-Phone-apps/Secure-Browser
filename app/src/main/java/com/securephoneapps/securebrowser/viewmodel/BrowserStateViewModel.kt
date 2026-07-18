@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import java.net.URI
 import java.net.URLEncoder
 import java.util.UUID
@@ -151,6 +153,25 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun createNewTabInGroup(url: String, isIncognito: Boolean = false) {
+        viewModelScope.launch {
+            val groupId = UUID.randomUUID().toString()
+            val colorHex = "#0A84FF" // Default secure blue badge for link-created group
+            repository.insertGroup(TabGroup(groupId = groupId, groupName = "Link Stack", hexColorBadge = colorHex))
+            val tab = TabInstance(
+                tabId = UUID.randomUUID().toString(),
+                currentUrl = url,
+                pageTitle = "New Tab",
+                lastActiveTimestamp = System.currentTimeMillis(),
+                isIncognito = isIncognito,
+                parentGroupId = groupId
+            )
+            repository.insertTab(tab)
+            _activeTabId.value = tab.tabId
+            _currentScreen.value = Screen.Browser
+        }
+    }
+
     fun selectTab(tabId: String) {
         viewModelScope.launch {
             _activeTabId.value = tabId
@@ -242,9 +263,11 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         val tab = _tabsState.value.find { it.tabId == tabId } ?: return
         val bundle = android.os.Bundle()
         webView.saveState(bundle)
-        val bytes = bundleToBytes(bundle)
         viewModelScope.launch {
-            repository.insertTab(tab.copy(serializedEngineState = bytes))
+            withContext(Dispatchers.IO) {
+                val bytes = bundleToBytes(bundle)
+                repository.insertTab(tab.copy(serializedEngineState = bytes))
+            }
         }
     }
 
@@ -252,13 +275,17 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         val tab = _tabsState.value.find { it.tabId == tabId } ?: return
         val bundle = android.os.Bundle()
         webView.saveState(bundle)
-        val bytes = bundleToBytes(bundle)
         viewModelScope.launch {
-            val updated = tab.copy(
-                serializedEngineState = bytes,
-                isSuspendedState = true
-            )
-            repository.insertTab(updated)
+            val bytes = withContext(Dispatchers.IO) {
+                bundleToBytes(bundle)
+            }
+            withContext(Dispatchers.IO) {
+                val updated = tab.copy(
+                    serializedEngineState = bytes,
+                    isSuspendedState = true
+                )
+                repository.insertTab(updated)
+            }
             // Safely clear content on UI thread
             webView.post {
                 try {
@@ -274,9 +301,15 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     fun restoreTabState(tabId: String, webView: WebView) {
         val tab = _tabsState.value.find { it.tabId == tabId } ?: return
         val bytes = tab.serializedEngineState ?: return
-        val bundle = bytesToBundle(bytes)
-        if (bundle != null) {
-            webView.restoreState(bundle)
+        viewModelScope.launch {
+            val bundle: android.os.Bundle? = withContext(Dispatchers.IO) {
+                bytesToBundle(bytes)
+            }
+            if (bundle != null) {
+                withContext(Dispatchers.Main) {
+                    webView.restoreState(bundle)
+                }
+            }
         }
     }
 
