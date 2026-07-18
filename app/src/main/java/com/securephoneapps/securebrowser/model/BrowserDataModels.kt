@@ -9,7 +9,9 @@ data class HistoryItem(
     val url: String,
     val title: String,
     val timestamp: Long = System.currentTimeMillis(),
-    val trackersBlocked: Int = 0
+    val trackersBlocked: Int = 0,
+    val executionTimestamp: Long = System.currentTimeMillis(),
+    val loadDurationMs: Long = 0L
 )
 
 @Entity(tableName = "bookmark_items")
@@ -17,15 +19,16 @@ data class BookmarkItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val url: String,
     val title: String,
-    val folderPath: String = "", // e.g. "/Root/Security" or "Root"
-    val createdTimestamp: Long = System.currentTimeMillis()
+    val folderPath: String = "Root",
+    val createdTimestamp: Long = System.currentTimeMillis(),
+    val lastVisitedTimestamp: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "tab_instances")
 data class TabInstance(
     @PrimaryKey val tabId: String,
     val currentUrl: String,
-    val title: String,
+    val pageTitle: String,
     val lastActiveTimestamp: Long = System.currentTimeMillis(),
     val parentGroupId: String? = null,
     val isIncognito: Boolean = false,
@@ -38,7 +41,7 @@ data class TabInstance(
         other as TabInstance
         if (tabId != other.tabId) return false
         if (currentUrl != other.currentUrl) return false
-        if (title != other.title) return false
+        if (pageTitle != other.pageTitle) return false
         if (lastActiveTimestamp != other.lastActiveTimestamp) return false
         if (parentGroupId != other.parentGroupId) return false
         if (isIncognito != other.isIncognito) return false
@@ -53,7 +56,7 @@ data class TabInstance(
     override fun hashCode(): Int {
         var result = tabId.hashCode()
         result = 31 * result + currentUrl.hashCode()
-        result = 31 * result + title.hashCode()
+        result = 31 * result + pageTitle.hashCode()
         result = 31 * result + lastActiveTimestamp.hashCode()
         result = 31 * result + (parentGroupId?.hashCode() ?: 0)
         result = 31 * result + isIncognito.hashCode()
@@ -67,7 +70,7 @@ data class TabInstance(
 data class TabGroup(
     @PrimaryKey val groupId: String,
     val groupName: String,
-    val colorBadgeHex: String // e.g. "#FF3B30", "#34C759"
+    val hexColorBadge: String // e.g. "#FF3B30", "#34C759"
 )
 
 @Entity(tableName = "shield_telemetry")

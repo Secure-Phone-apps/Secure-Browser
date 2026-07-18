@@ -128,7 +128,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         val tab = TabInstance(
             tabId = UUID.randomUUID().toString(),
             currentUrl = "about:blank",
-            title = "Secure Dashboard",
+            pageTitle = "Secure Dashboard",
             lastActiveTimestamp = System.currentTimeMillis()
         )
         repository.insertTab(tab)
@@ -141,7 +141,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             val tab = TabInstance(
                 tabId = UUID.randomUUID().toString(),
                 currentUrl = url,
-                title = if (url == "about:blank") "Secure Dashboard" else "New Tab",
+                pageTitle = if (url == "about:blank") "Secure Dashboard" else "New Tab",
                 lastActiveTimestamp = System.currentTimeMillis(),
                 isIncognito = isIncognito
             )
@@ -187,7 +187,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             val updated = currentTab.copy(
                 currentUrl = url,
-                title = title,
+                pageTitle = title,
                 lastActiveTimestamp = System.currentTimeMillis()
             )
             repository.insertTab(updated)
@@ -245,6 +245,38 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         val bytes = bundleToBytes(bundle)
         viewModelScope.launch {
             repository.insertTab(tab.copy(serializedEngineState = bytes))
+        }
+    }
+
+    fun hibernateTab(tabId: String, webView: WebView) {
+        val tab = _tabsState.value.find { it.tabId == tabId } ?: return
+        val bundle = android.os.Bundle()
+        webView.saveState(bundle)
+        val bytes = bundleToBytes(bundle)
+        viewModelScope.launch {
+            val updated = tab.copy(
+                serializedEngineState = bytes,
+                isSuspendedState = true
+            )
+            repository.insertTab(updated)
+            // Safely clear content on UI thread
+            webView.post {
+                try {
+                    webView.stopLoading()
+                    webView.loadUrl("about:blank")
+                } catch (e: Exception) {
+                    // Safe fall
+                }
+            }
+        }
+    }
+
+    fun restoreTabState(tabId: String, webView: WebView) {
+        val tab = _tabsState.value.find { it.tabId == tabId } ?: return
+        val bytes = tab.serializedEngineState ?: return
+        val bundle = bytesToBundle(bytes)
+        if (bundle != null) {
+            webView.restoreState(bundle)
         }
     }
 
@@ -347,7 +379,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     fun createTabGroup(name: String, colorHex: String): String {
         val id = UUID.randomUUID().toString()
         viewModelScope.launch {
-            repository.insertGroup(TabGroup(groupId = id, groupName = name, colorBadgeHex = colorHex))
+            repository.insertGroup(TabGroup(groupId = id, groupName = name, hexColorBadge = colorHex))
         }
         return id
     }

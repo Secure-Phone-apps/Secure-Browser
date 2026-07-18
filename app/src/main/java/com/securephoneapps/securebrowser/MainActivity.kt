@@ -167,6 +167,8 @@ fun configureEngineParameters(settings: WebSettings) {
     settings.apply {
         allowFileAccess = false
         allowContentAccess = false
+        allowFileAccessFromFileURLs = false
+        allowUniversalAccessFromFileURLs = false
         databaseEnabled = false
         domStorageEnabled = true
         useWideViewPort = true
@@ -309,7 +311,7 @@ fun BrowserWorkspaceScreen(
                     IconButton(
                         onClick = {
                             activeTab?.let {
-                                viewModel.updateActiveTabUrl(it.currentUrl, it.title)
+                                viewModel.updateActiveTabUrl(it.currentUrl, it.pageTitle)
                             }
                         },
                         modifier = Modifier.size(28.dp)
@@ -518,6 +520,7 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
+            .background(Color(0xFF090D16)) // Custom deep dark midnight background
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
@@ -530,7 +533,7 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                 Icon(
                     imageVector = Icons.Default.Shield,
                     contentDescription = null,
-                    tint = Color(0xFF059669), // Emerald 600
+                    tint = Color(0xFF10B981), // Emerald 500
                     modifier = Modifier.size(56.dp)
                 )
                 Spacer(modifier = Modifier.height(10.dp))
@@ -538,7 +541,7 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                     text = "SECURE BROWSER",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = Color(0xFF0F172A), // Slate 900
+                    color = Color.White,
                     letterSpacing = (-0.5).sp,
                     fontFamily = FontFamily.SansSerif
                 )
@@ -546,24 +549,24 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                     text = "HARDENED SANDBOX SHELL ACTIVE",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF059669), // Emerald 600
+                    color = Color(0xFF10B981), // Emerald 500
                     letterSpacing = 1.sp
                 )
             }
         }
 
-        // Blocking Statistics: Professional Polish Grid Style
+        // Blocking Statistics: Dark Theme Grid Style
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Card 1: Trackers (Dark Slate Theme as in Design HTML)
+                // Card 1: Trackers
                 Card(
                     modifier = Modifier
                         .weight(1f)
                         .height(100.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)), // Slate 900
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)), // Slate 800
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(
@@ -575,7 +578,7 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                     ) {
                         Text(
                             text = (telemetry?.trackersBlockedGlobal ?: 0L).toString(),
-                            color = Color.White,
+                            color = Color(0xFF10B981), // Emerald Green
                             fontSize = 22.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
@@ -590,13 +593,12 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                     }
                 }
 
-                // Card 2: Canvas Fakes (White Theme, Blue Text)
+                // Card 2: Canvas Fakes
                 Card(
                     modifier = Modifier
                         .weight(1f)
-                        .height(100.dp)
-                        .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(16.dp)),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                        .height(100.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(
@@ -608,14 +610,14 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                     ) {
                         Text(
                             text = (telemetry?.canvasFakesTriggered ?: 0L).toString(),
-                            color = Color(0xFF2563EB), // Blue 600
+                            color = Color(0xFF3B82F6), // Blue 500
                             fontSize = 22.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "Canvas Fakes",
-                            color = Color(0xFF64748B), // Slate 500
+                            color = Color(0xFF94A3B8), // Slate 400
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center
@@ -623,13 +625,12 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                     }
                 }
 
-                // Card 3: Fingerprints Distorted (Light Blue Theme, Indigo Text)
+                // Card 3: Fingerprints Distorted
                 Card(
                     modifier = Modifier
                         .weight(1f)
-                        .height(100.dp)
-                        .border(width = 1.dp, color = Color(0xFFDBEAFE), shape = RoundedCornerShape(16.dp)),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF6FF)), // Blue 50
+                        .height(100.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(
@@ -641,14 +642,14 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                     ) {
                         Text(
                             text = (telemetry?.fingerprintMocksTriggered ?: 0L).toString(),
-                            color = Color(0xFF4F46E5), // Indigo 600
+                            color = Color(0xFF818CF8), // Light Indigo
                             fontSize = 22.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "Fingerprints",
-                            color = Color(0xFF4F46E5), // Indigo 600
+                            color = Color(0xFF94A3B8), // Slate 400
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center
@@ -665,7 +666,7 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                     text = "SECURE QUICK LAUNCH",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Black,
-                    color = Color(0xFF64748B), // Slate 500
+                    color = Color(0xFF94A3B8), // Slate 400
                     letterSpacing = 1.sp,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
@@ -678,17 +679,17 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                 ) {
                     items(quickLaunchTiles) { (title, url) ->
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
-                                .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(12.dp))
+                                .border(width = 1.dp, color = Color(0xFF334155), shape = RoundedCornerShape(12.dp))
                                 .clickable { viewModel.updateActiveTabUrl(url, title) }
                                 .height(52.dp)
                         ) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Text(
                                     text = title,
-                                    color = Color(0xFF0F172A), // Slate 900
+                                    color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center
@@ -705,35 +706,35 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
             item {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "SECURE BOOKMARKS",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Black,
-                            color = Color(0xFF64748B), // Slate 500
+                            color = Color(0xFF94A3B8), // Slate 400
                             letterSpacing = 1.sp
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     bookmarks.take(4).forEach { bmk ->
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp)
-                                .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(12.dp))
+                                .border(width = 1.dp, color = Color(0xFF334155), shape = RoundedCornerShape(12.dp))
                                 .clickable { viewModel.updateActiveTabUrl(bmk.url, bmk.title) }
                         ) {
                             Row(
                                 modifier = Modifier.padding(14.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
-                              ) {
+                            ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(bmk.title, color = Color(0xFF0F172A), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(bmk.url, color = Color(0xFF64748B), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(bmk.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(bmk.url, color = Color(0xFF94A3B8), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 IconButton(onClick = { viewModel.deleteBookmark(bmk.id) }, modifier = Modifier.size(24.dp)) {
                                     Icon(Icons.Default.Close, contentDescription = "Delete Bookmark", tint = Color(0xFF94A3B8), modifier = Modifier.size(14.dp))
@@ -755,14 +756,14 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.History, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.History, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                    text = "RECENT SESSION LOGS",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color(0xFF64748B), // Slate 500
-                                    letterSpacing = 1.sp
+                                text = "RECENT SESSION LOGS",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFF94A3B8), // Slate 400
+                                letterSpacing = 1.sp
                             )
                         }
                         Text(
@@ -776,23 +777,23 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                     Spacer(modifier = Modifier.height(8.dp))
                     history.take(4).forEach { hist ->
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp)
-                                .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(12.dp))
+                                .border(width = 1.dp, color = Color(0xFF334155), shape = RoundedCornerShape(12.dp))
                                 .clickable { viewModel.updateActiveTabUrl(hist.url, hist.title) }
                         ) {
                             Row(
                                 modifier = Modifier.padding(14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF059669), modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
-                                    Text(hist.title, color = Color(0xFF0F172A), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(hist.url, color = Color(0xFF64748B), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(hist.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(hist.url, color = Color(0xFF94A3B8), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
@@ -800,29 +801,5 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                 }
             }
         }
-    }
-}
-
-@Composable
-fun StatCounter(
-    value: Long,
-    label: String,
-    color: Color
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value.toString(),
-            color = color,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = label,
-            color = Color.Gray,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center
-        )
     }
 }

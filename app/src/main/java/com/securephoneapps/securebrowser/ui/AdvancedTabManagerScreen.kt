@@ -144,7 +144,7 @@ fun AdvancedTabManagerScreen(
                                 .weight(1f)
                                 .border(
                                     1.dp,
-                                    Color(android.graphics.Color.parseColor(group.colorBadgeHex)),
+                                    Color(android.graphics.Color.parseColor(group.hexColorBadge)),
                                     RoundedCornerShape(12.dp)
                                 )
                         ) {
@@ -159,7 +159,7 @@ fun AdvancedTabManagerScreen(
                                             modifier = Modifier
                                                 .size(10.dp)
                                                 .clip(RoundedCornerShape(5.dp))
-                                                .background(Color(android.graphics.Color.parseColor(group.colorBadgeHex)))
+                                                .background(Color(android.graphics.Color.parseColor(group.hexColorBadge)))
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
@@ -220,7 +220,7 @@ fun AdvancedTabManagerScreen(
                         tab = tab,
                         isActive = isActive,
                         isGrouped = isGrouped,
-                        groupColor = associatedGroup?.colorBadgeHex ?: "#000000",
+                        groupColor = associatedGroup?.hexColorBadge ?: "#000000",
                         onClick = { viewModel.selectTab(tab.tabId) },
                         onClose = { viewModel.closeTab(tab.tabId) },
                         onLongClick = {
@@ -275,7 +275,7 @@ fun AdvancedTabManagerScreen(
                                     modifier = Modifier
                                         .size(12.dp)
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(android.graphics.Color.parseColor(grp.colorBadgeHex)))
+                                        .background(Color(android.graphics.Color.parseColor(grp.hexColorBadge)))
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(grp.groupName, color = Color(0xFF0F172A), fontSize = 13.sp)
@@ -432,7 +432,7 @@ fun TabCard(
                             Spacer(modifier = Modifier.width(4.dp))
                         }
                         Text(
-                            text = tab.title,
+                            text = tab.pageTitle,
                             color = Color(0xFF0F172A), // Slate 900
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
