@@ -305,6 +305,18 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     fun updateActiveTabUrl(url: String, title: String) {
         val activeId = _activeTabId.value ?: return
         val currentTab = _tabsState.value.find { it.tabId == activeId } ?: return
+        
+        // ENFORCE STORAGE ISOLATION
+        // When an existing tab instance changes its primary domain host, clear DOM storage.
+        val oldHost = extractHost(currentTab.currentUrl)
+        val newHost = extractHost(url)
+        if (oldHost != null && newHost != null && oldHost != newHost) {
+            viewModelScope.launch(Dispatchers.Main) {
+                WebStorage.getInstance().deleteAllData()
+                CookieManager.getInstance().flush()
+            }
+        }
+
         viewModelScope.launch {
             val updated = currentTab.copy(
                 currentUrl = url,

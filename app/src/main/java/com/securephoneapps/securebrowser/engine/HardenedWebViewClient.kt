@@ -265,6 +265,40 @@ class HardenedWebViewClient(
                     const options = orgResolvedOptions.apply(this, arguments);
                     return { ...options, timeZone: 'UTC' };
                 };
+
+                // 8. Motion Sensor Cloaking
+                const zeroEvent = {
+                    alpha: 0, beta: 0, gamma: 0,
+                    absolute: false,
+                    acceleration: { x: 0, y: 0, z: 0 },
+                    accelerationIncludingGravity: { x: 0, y: 0, z: 0 },
+                    rotationRate: { alpha: 0, beta: 0, gamma: 0 },
+                    interval: 16
+                };
+                window.DeviceOrientationEvent = function() { return zeroEvent; };
+                window.DeviceMotionEvent = function() { return zeroEvent; };
+
+                // 9. WebRTC Media Device Masking
+                if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+                    const orgEnumerateDevices = navigator.mediaDevices.enumerateDevices;
+                    navigator.mediaDevices.enumerateDevices = function() {
+                        return orgEnumerateDevices.apply(this, arguments).then(devices => {
+                            return devices.map(device => {
+                                let label = "Standard Device";
+                                if (device.kind === 'audioinput') label = "Standard Microphone Input";
+                                if (device.kind === 'audiooutput') label = "Standard Speaker Output";
+                                if (device.kind === 'videoinput') label = "Default Rear Camera";
+                                
+                                return {
+                                    deviceId: "default",
+                                    kind: device.kind,
+                                    label: label,
+                                    groupId: "default"
+                                };
+                            });
+                        });
+                    };
+                }
             } catch (e) {
                 console.error("Fingerprint shielding exception:", e);
             }

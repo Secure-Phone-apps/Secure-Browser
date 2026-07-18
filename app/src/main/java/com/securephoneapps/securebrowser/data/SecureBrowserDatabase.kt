@@ -14,7 +14,10 @@ import com.securephoneapps.securebrowser.model.HistoryItem
 import com.securephoneapps.securebrowser.model.ShieldTelemetry
 import com.securephoneapps.securebrowser.model.TabGroup
 import com.securephoneapps.securebrowser.model.TabInstance
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 
 @Dao
 interface HistoryDao {
@@ -121,6 +124,18 @@ abstract class SecureBrowserDatabase : RoomDatabase() {
     abstract fun tabInstanceDao(): TabInstanceDao
     abstract fun tabGroupDao(): TabGroupDao
     abstract fun shieldTelemetryDao(): ShieldTelemetryDao
+    
+    // --- LOCAL DATABASE VACUUM OPTIMIZATION ---
+    fun executeDatabaseVacuum() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Run raw SQLite VACUUM to defragment storage and shrink file size
+                openHelper.writableDatabase.execSQL("VACUUM;")
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 
     companion object {
         @Volatile
