@@ -1,0 +1,6 @@
+{
+  "name": "Secure Browser",
+  "description": "An ultra-secure, privacy-hardened Android web browser with advanced tracking block protection, secure storage, dynamic session clearing, and a custom network shield engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
