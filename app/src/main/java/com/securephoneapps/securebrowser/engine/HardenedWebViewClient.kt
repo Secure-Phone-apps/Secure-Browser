@@ -50,8 +50,12 @@ class HardenedWebViewClient(
                 if (currentHost != null) {
                     val previousHost = lastHost
                     if (previousHost != null && previousHost != currentHost) {
-                        android.webkit.WebStorage.getInstance().deleteOrigin("https://$previousHost")
-                        android.webkit.WebStorage.getInstance().deleteOrigin("http://$previousHost")
+                        // CROSS-TAB ISOLATION PROTOCOL
+                        // Trigger a targeted data purge to clear cross-origin local storage variables cleanly.
+                        val storage = android.webkit.WebStorage.getInstance()
+                        storage.deleteOrigin(previousHost)
+                        storage.deleteOrigin("https://$previousHost")
+                        storage.deleteOrigin("http://$previousHost")
                     }
                     lastHost = currentHost
                 }
@@ -631,13 +635,45 @@ class HardenedWebViewClient(
         """.trimIndent()
     }
 
+    private fun getDarkModeEngineScript(): String {
+        return """
+            (function() {
+                if (window.v_dark_mode_active) return;
+                window.v_dark_mode_active = true;
+                const style = document.createElement('style');
+                style.id = 'v-dark-mode-engine';
+                style.textContent = `
+                    @media (prefers-color-scheme: dark) {
+                        html, body { background-color: #0F172A !important; color: #E2E8F0 !important; }
+                        img, video, canvas, iframe { filter: brightness(.8) contrast(1.2) !important; }
+                        * { border-color: #334155 !important; }
+                    }
+                `;
+                (document.head || document.documentElement).appendChild(style);
+            })();
+        """.trimIndent()
+    }
+
     private fun registerDocumentStartScripts(view: WebView) {
         val hash = System.identityHashCode(view)
         if (registeredWebViews.contains(hash)) return
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             try {
+                // Primary Anti-Fingerprinting Virtualization
                 WebViewCompat.addDocumentStartJavaScript(view, getFingerprintInjectionScript(), setOf("*"))
+                
+                // LOCAL CUSTOM USER SCRIPT MANAGER
+                // Systematically evaluate and inject local user modifications (.user.js data streams)
+                viewModel?.userScriptsList?.value?.forEach { script ->
+                    WebViewCompat.addDocumentStartJavaScript(view, script.second, setOf("*"))
+                }
+                
+                // Advanced Web Layout Dark Mode Injection
+                if (viewModel?.forcedDarkModeEnabled?.value == true) {
+                    WebViewCompat.addDocumentStartJavaScript(view, getDarkModeEngineScript(), setOf("*"))
+                }
+
                 WebViewCompat.addDocumentStartJavaScript(view, shieldsEngine.ampNeutralizerScript, setOf("*"))
                 registeredWebViews.add(hash)
             } catch (e: Exception) {

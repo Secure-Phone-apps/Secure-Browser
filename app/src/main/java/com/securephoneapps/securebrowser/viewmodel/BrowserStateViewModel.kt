@@ -259,15 +259,16 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                     for (f in files) {
                         if (f.isDirectory) {
                             deleteDirContents(f)
+                        } else {
+                            f.delete()
                         }
-                        f.delete()
                     }
                 }
 
                 val cacheSize = getDirSize(cacheDir)
                 val codeCacheSize = getDirSize(codeCacheDir)
                 val totalSize = cacheSize + codeCacheSize
-                val ceiling = 200 * 1024 * 1024L // 200MB ceiling
+                val ceiling = 500 * 1024 * 1024L // 500MB ceiling
 
                 if (totalSize > ceiling) {
                     deleteDirContents(cacheDir)
@@ -762,31 +763,35 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
 
     fun hibernateTab(tabId: String, webView: WebView) {
         val tab = _tabsState.value.find { it.tabId == tabId } ?: return
+        
+        // Elite Hibernation Pipeline: Extract state bundle, serialize to ByteArray, and persist
         val bundle = android.os.Bundle()
         webView.saveState(bundle)
+        
         viewModelScope.launch {
             val bytes = withContext(Dispatchers.IO) {
                 databaseMutex.withLock {
                     bundleToBytes(bundle)
                 }
             }
+            
             withContext(Dispatchers.IO) {
                 databaseMutex.withLock {
                     val updated = tab.copy(
                         serializedEngineState = bytes,
-                        isSuspendedState = true
+                        isSuspendedState = true,
+                        lastActiveTimestamp = System.currentTimeMillis()
                     )
                     repository.insertTab(updated)
                 }
             }
-            // Safely clear content on UI thread
+            
+            // Neutralize the active container after state is safely committed
             webView.post {
                 try {
                     webView.stopLoading()
                     webView.loadUrl("about:blank")
-                } catch (e: Exception) {
-                    // Safe fall
-                }
+                } catch (e: Exception) {}
             }
         }
     }
@@ -794,15 +799,24 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     fun restoreTabState(tabId: String, webView: WebView) {
         val tab = _tabsState.value.find { it.tabId == tabId } ?: return
         val bytes = tab.serializedEngineState ?: return
+        
         viewModelScope.launch {
-            val bundle: android.os.Bundle? = withContext(Dispatchers.IO) {
+            val bundle = withContext(Dispatchers.IO) {
                 databaseMutex.withLock {
                     bytesToBundle(bytes)
                 }
             }
+            
             if (bundle != null) {
                 withContext(Dispatchers.Main) {
+                    // Flawless restoration of scroll indices, form data, and history stacks
                     webView.restoreState(bundle)
+                    
+                    // Mark as active and wake from hibernation
+                    val updated = tab.copy(isSuspendedState = false, lastActiveTimestamp = System.currentTimeMillis())
+                    withContext(Dispatchers.IO) {
+                        repository.insertTab(updated)
+                    }
                 }
             }
         }

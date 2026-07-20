@@ -175,14 +175,23 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // WEB ENGINE COLD-START WARMUP
-        // Instructure a detached background WebView instance to boot immediately.
-        // This forces Chromium to cache runtime rendering classes, cutting latency.
+        // CRITICAL CACHE DIRECTORY SYNC: Pre-emptively create Chromium code cache subdirectories
+        // This eliminates "No such file or directory" errors in Chromium's file enumerator
+        try {
+            val codeCacheRoot = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache")
+            java.io.File(codeCacheRoot, "js").mkdirs()
+            java.io.File(codeCacheRoot, "wasm").mkdirs()
+        } catch (e: Exception) {}
+
+        // HEADLESS ENGINE PRE-WARMING (Asynchronous Warmup Routine)
+        // Instructs a detached background WebView instance to initialize immediately.
+        // This forces Chromium to cache rendering classes and JIT-compiled assets prior to user interaction.
         CoroutineScope(Dispatchers.Main).launch {
             try {
+                // Must be instantiated on Main thread
                 val warmupWebView = WebView(applicationContext)
                 warmupWebView.loadUrl("about:blank")
-                delay(1000)
+                delay(800) 
                 warmupWebView.destroy()
             } catch (e: Exception) {}
         }
@@ -386,17 +395,11 @@ fun configureEngineParameters(settings: WebSettings, viewModel: BrowserStateView
         val currentUA = viewModel?.selectedUserAgent?.value ?: "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.165 Mobile Safari/537.36"
         userAgentString = currentUA
         
-        // FORCED WEB LAYOUT DARK MODE (Vivaldi Style)
-        // Checks if global override is enabled or if device is in dark mode
-        val forcedDark = viewModel?.forcedDarkModeEnabled?.value ?: true
-        if (forcedDark) {
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
-                WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_ON)
-            }
-        } else {
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
-                WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_OFF)
-            }
+        // ADVANCED WEB LAYOUT DARK MODE (Vivaldi Style)
+        // We deprecate hard inversion settings in favor of a dynamic CSS user-script engine 
+        // to protect visual assets and media canvases while ensuring midnight tones.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+            WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_OFF)
         }
         
         allowFileAccess = false
