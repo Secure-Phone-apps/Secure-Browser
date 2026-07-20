@@ -417,7 +417,7 @@ fun configureEngineParameters(settings: WebSettings, viewModel: BrowserStateView
         }
         savePassword = false
         saveFormData = false
-        mediaPlaybackRequiresUserGesture = true
+        mediaPlaybackRequiresUserGesture = false
         mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         
         // Geolocation block
@@ -1240,7 +1240,8 @@ fun BrowserWorkspaceScreen(
                                 // Handle internal navigation state syncing
                                 viewModel.updateActiveTabUrl(url, title)
                             },
-                            isAudioShieldActive = { viewModel.isAudioShieldActive.value }
+                            isAudioShieldActive = { viewModel.isAudioShieldActive.value },
+                            viewModel = viewModel
                         )
                         sharedWebView
                     },

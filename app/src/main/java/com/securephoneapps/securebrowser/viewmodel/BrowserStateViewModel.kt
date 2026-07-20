@@ -105,6 +105,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val isAudioShieldActive = MutableStateFlow(true)
     val searchSuggestions = MutableStateFlow<List<String>>(emptyList())
     val restrictLocalSubnets = MutableStateFlow(encryptedPrefs.getBoolean("restrict_local_subnets", true))
+    val userScriptsList = MutableStateFlow<List<Pair<String, String>>>(emptyList())
 
     init {
         // Apply persistent proxy settings on boot
@@ -187,6 +188,14 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             restrictLocalSubnets.value = enabled
             encryptedPrefs.edit().putBoolean("restrict_local_subnets", enabled).apply()
+        }
+    }
+
+    fun registerNewUserScript(title: String, jsCode: String) {
+        viewModelScope.launch {
+            val current = userScriptsList.value.toMutableList()
+            current.add(Pair(title, jsCode))
+            userScriptsList.value = current
         }
     }
 

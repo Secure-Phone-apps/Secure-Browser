@@ -34,7 +34,8 @@ class HardenedWebViewClient(
     private val onFingerprintMocked: (type: String) -> Unit,
     private val onPageStartedCallback: (url: String) -> Unit = {},
     private val onPageFinishedCallback: (url: String, title: String) -> Unit = { _, _ -> },
-    private val isAudioShieldActive: () -> Boolean = { true }
+    private val isAudioShieldActive: () -> Boolean = { true },
+    private val viewModel: com.securephoneapps.securebrowser.viewmodel.BrowserStateViewModel? = null
 ) : WebViewClient() {
 
     private val registeredWebViews = mutableSetOf<Int>()
@@ -527,6 +528,21 @@ class HardenedWebViewClient(
                 };
                 injectGlobalFontSubstitution();
                 document.addEventListener('DOMContentLoaded', injectGlobalFontSubstitution);
+
+                // 12. Background video playback & visibility event neutralization
+                const handleVisibility = (e) => {
+                    e.stopImmediatePropagation();
+                };
+                document.addEventListener('visibilitychange', handleVisibility, true);
+                document.addEventListener('webkitvisibilitychange', handleVisibility, true);
+                Object.defineProperty(document, 'visibilityState', {
+                    get: () => 'visible',
+                    configurable: true
+                });
+                Object.defineProperty(document, 'hidden', {
+                    get: () => false,
+                    configurable: true
+                });
             } catch (e) {
                 console.error("Fingerprint shielding exception:", e);
             }
@@ -594,6 +610,7 @@ class HardenedWebViewClient(
             view?.evaluateJavascript(getFingerprintInjectionScript(), null)
             view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
         }
+        view?.let { injectCustomUserScripts(it) }
         url?.let {
             val cleanedUrl = cleanTrackingParameters(it)
             onPageStartedCallback(cleanedUrl)
@@ -606,7 +623,16 @@ class HardenedWebViewClient(
         // Reinforce injection on completion just in case of iframe or state resets
         view?.evaluateJavascript(getFingerprintInjectionScript(), null)
         view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
+        view?.let { injectCustomUserScripts(it) }
         val title = view?.title ?: ""
         url?.let { onPageFinishedCallback(it, title) }
+    }
+
+    private fun injectCustomUserScripts(view: WebView) {
+        val scripts = viewModel?.userScriptsList?.value ?: return
+        for (script in scripts) {
+            val jsCode = script.second
+            view.evaluateJavascript(jsCode, null)
+        }
     }
 }

@@ -77,6 +77,7 @@ fun AdvancedTabManagerScreen(
     val tabs by viewModel.tabsState.collectAsState()
     val activeTabId by viewModel.activeTabId.collectAsState()
     val tabGroups by viewModel.tabGroups.collectAsState()
+    val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
 
     var showCreateGroupDialog by remember { mutableStateOf(false) }
     var selectedTabForGroup by remember { mutableStateOf<TabInstance?>(null) }
@@ -223,6 +224,7 @@ fun AdvancedTabManagerScreen(
                         confirmValueChange = { value ->
                             if (value == SwipeToDismissBoxValue.StartToEnd || value == SwipeToDismissBoxValue.EndToStart) {
                                 viewModel.closeTab(tab.tabId)
+                                hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                 true
                             } else {
                                 false
