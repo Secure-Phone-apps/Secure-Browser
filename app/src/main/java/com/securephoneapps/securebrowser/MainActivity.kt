@@ -1407,6 +1407,7 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
     val telemetry by viewModel.shieldTelemetry.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
     val history by viewModel.history.collectAsState()
+    val proxyDiagnosticState by viewModel.proxyDiagnosticState.collectAsState()
 
     val quickLaunchTiles = listOf(
         "DuckDuckGo" to "https://duckduckgo.com",
@@ -1452,6 +1453,29 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                     color = Color(0xFF10B981), // Emerald 500
                     letterSpacing = 1.sp
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .background(Color(0xFF1E293B).copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(
+                                color = if (proxyDiagnosticState.startsWith("Tunnel Active")) Color(0xFF10B981) else if (proxyDiagnosticState == "Checking...") Color(0xFFF59E0B) else Color(0xFFEF4444),
+                                shape = RoundedCornerShape(50.dp)
+                            )
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Proxy: $proxyDiagnosticState",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF94A3B8)
+                    )
+                }
             }
         }
 

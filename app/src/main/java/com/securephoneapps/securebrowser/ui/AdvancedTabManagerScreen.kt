@@ -67,6 +67,14 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import com.securephoneapps.securebrowser.model.TabGroup
 import com.securephoneapps.securebrowser.model.TabInstance
 import com.securephoneapps.securebrowser.viewmodel.BrowserStateViewModel
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -436,11 +444,45 @@ fun TabCard(
         Color(0xFFE2E8F0) // Slate 200
     }
 
+    val shimmerBrush = if (tab.isSuspendedState) {
+        val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+        val translateAnim by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1000f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = 1200,
+                    easing = FastOutSlowInEasing
+                ),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "shimmerTranslation"
+        )
+        Brush.linearGradient(
+            colors = listOf(
+                Color(0xFFF1F5F9),
+                Color(0xFFE2E8F0),
+                Color(0xFFF1F5F9)
+            ),
+            start = Offset(translateAnim - 300f, translateAnim - 300f),
+            end = Offset(translateAnim, translateAnim)
+        )
+    } else {
+        null
+    }
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = if (tab.isSuspendedState) Color.Transparent else Color.White),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .height(140.dp)
+            .then(
+                if (shimmerBrush != null) {
+                    Modifier.background(shimmerBrush)
+                } else {
+                    Modifier
+                }
+            )
             .border(2.dp, borderCol, RoundedCornerShape(12.dp))
             .combinedClickable(
                 onClick = onClick,

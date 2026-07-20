@@ -561,6 +561,40 @@ class HardenedWebViewClient(
                     get: () => false,
                     configurable: true
                 });
+
+                // 13. Clipboard security protector
+                let lastPhysicalUserInteraction = 0;
+                const recordUserInteraction = () => {
+                    lastPhysicalUserInteraction = Date.now();
+                };
+                window.addEventListener('click', recordUserInteraction, true);
+                window.addEventListener('touchstart', recordUserInteraction, true);
+                window.addEventListener('keydown', recordUserInteraction, true);
+
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    const orgReadText = navigator.clipboard.readText;
+                    navigator.clipboard.readText = function() {
+                        const timeSinceInteraction = Date.now() - lastPhysicalUserInteraction;
+                        if (timeSinceInteraction > 1000) {
+                            if (window.FingerprintShield) {
+                                window.FingerprintShield.onFingerprintMockTriggered("clipboard_access_blocked");
+                            }
+                            return Promise.reject(new DOMException("Clipboard read access denied without active physical user interaction.", "NotAllowedError"));
+                        }
+                        return orgReadText.apply(this, arguments);
+                    };
+                }
+
+                document.addEventListener('paste', (e) => {
+                    const timeSinceInteraction = Date.now() - lastPhysicalUserInteraction;
+                    if (timeSinceInteraction > 1000) {
+                        e.stopImmediatePropagation();
+                        e.preventDefault();
+                        if (window.FingerprintShield) {
+                            window.FingerprintShield.onFingerprintMockTriggered("clipboard_paste_blocked");
+                        }
+                    }
+                }, true);
             } catch (e) {
                 console.error("Fingerprint shielding exception:", e);
             }

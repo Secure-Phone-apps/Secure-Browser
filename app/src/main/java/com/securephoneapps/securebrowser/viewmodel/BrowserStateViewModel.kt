@@ -106,11 +106,18 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val searchSuggestions = MutableStateFlow<List<String>>(emptyList())
     val restrictLocalSubnets = MutableStateFlow(encryptedPrefs.getBoolean("restrict_local_subnets", true))
     val userScriptsList = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+    val proxyDiagnosticState = MutableStateFlow("")
 
     init {
+        // Prune stale cache on boot if it crosses 200MB ceiling
+        pruneStaleCacheAndDatabaseAssets()
+
         // Apply persistent proxy settings on boot
         if (proxyEnabled.value) {
             applySystemPropertiesProxy(proxyHost.value, proxyPort.value, proxyType.value)
+            verifyProxyConnectivity()
+        } else {
+            proxyDiagnosticState.value = "Proxy Disabled"
         }
 
         // Observe and load Tab States from DB
@@ -199,6 +206,80 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun verifyProxyConnectivity() {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (!proxyEnabled.value) {
+                proxyDiagnosticState.value = "Proxy Disabled"
+                return@launch
+            }
+            proxyDiagnosticState.value = "Checking..."
+            try {
+                val url = java.net.URL("https://icanhazip.com")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                connection.useCaches = false
+                val responseCode = connection.responseCode
+                if (responseCode == 200) {
+                    val ip = connection.inputStream.bufferedReader().use { it.readText().trim() }
+                    proxyDiagnosticState.value = "Tunnel Active (IP: $ip)"
+                } else {
+                    proxyDiagnosticState.value = "Proxy Error: HTTP $responseCode"
+                }
+            } catch (e: Exception) {
+                proxyDiagnosticState.value = "Diagnostics Failed: ${e.localizedMessage ?: "Timeout"}"
+            }
+        }
+    }
+
+    private fun pruneStaleCacheAndDatabaseAssets() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val context = getApplication<Application>()
+                val cacheDir = context.cacheDir
+                val codeCacheDir = context.codeCacheDir
+                
+                fun getDirSize(dir: java.io.File): Long {
+                    var size = 0L
+                    val files = dir.listFiles() ?: return 0L
+                    for (f in files) {
+                        size += if (f.isDirectory) getDirSize(f) else f.length()
+                    }
+                    return size
+                }
+
+                fun deleteDirContents(dir: java.io.File) {
+                    val files = dir.listFiles() ?: return
+                    for (f in files) {
+                        if (f.isDirectory) {
+                            deleteDirContents(f)
+                        }
+                        f.delete()
+                    }
+                }
+
+                val cacheSize = getDirSize(cacheDir)
+                val codeCacheSize = getDirSize(codeCacheDir)
+                val totalSize = cacheSize + codeCacheSize
+                val ceiling = 200 * 1024 * 1024L // 200MB ceiling
+
+                if (totalSize > ceiling) {
+                    deleteDirContents(cacheDir)
+                    deleteDirContents(codeCacheDir)
+                    val appNoBackupFilesDir = context.noBackupFilesDir
+                    if (appNoBackupFilesDir != null && appNoBackupFilesDir.exists()) {
+                        val webViewDir = java.io.File(appNoBackupFilesDir, "androidx.web.WebView")
+                        if (webViewDir.exists()) {
+                            deleteDirContents(webViewDir)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun fetchSearchSuggestions(query: String) {
         if (query.trim().isEmpty()) {
             searchSuggestions.value = emptyList()
@@ -258,6 +339,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
 
             if (enabled) {
                 applySystemPropertiesProxy(host, port, type)
+                verifyProxyConnectivity()
             } else {
                 try {
                     System.clearProperty("socksProxyHost")
@@ -266,6 +348,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                     System.clearProperty("http.proxyPort")
                     System.clearProperty("https.proxyHost")
                     System.clearProperty("https.proxyPort")
+                    proxyDiagnosticState.value = "Proxy Disabled"
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
