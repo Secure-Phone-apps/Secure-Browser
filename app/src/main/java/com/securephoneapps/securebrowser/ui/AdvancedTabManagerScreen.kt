@@ -61,6 +61,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import com.securephoneapps.securebrowser.model.TabGroup
 import com.securephoneapps.securebrowser.model.TabInstance
 import com.securephoneapps.securebrowser.viewmodel.BrowserStateViewModel
@@ -211,23 +214,60 @@ fun AdvancedTabManagerScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                items(tabs) { tab ->
+                items(tabs, key = { it.tabId }) { tab ->
                     val isActive = tab.tabId == activeTabId
                     val associatedGroup = tabGroups.find { it.groupId == tab.parentGroupId }
                     val isGrouped = associatedGroup != null
 
-                    TabCard(
-                        tab = tab,
-                        isActive = isActive,
-                        isGrouped = isGrouped,
-                        groupColor = associatedGroup?.hexColorBadge ?: "#000000",
-                        onClick = { viewModel.selectTab(tab.tabId) },
-                        onClose = { viewModel.closeTab(tab.tabId) },
-                        onLongClick = {
-                            selectedTabForGroup = tab
-                            showCreateGroupDialog = true
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { value ->
+                            if (value == SwipeToDismissBoxValue.StartToEnd || value == SwipeToDismissBoxValue.EndToStart) {
+                                viewModel.closeTab(tab.tabId)
+                                true
+                            } else {
+                                false
+                            }
                         }
                     )
+
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        backgroundContent = {
+                            val color = when (dismissState.dismissDirection) {
+                                SwipeToDismissBoxValue.StartToEnd -> Color(0xFFEF4444)
+                                SwipeToDismissBoxValue.EndToStart -> Color(0xFFEF4444)
+                                else -> Color.Transparent
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(color)
+                                    .padding(horizontal = 16.dp),
+                                contentAlignment = if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete Tab",
+                                    tint = Color.White
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        TabCard(
+                            tab = tab,
+                            isActive = isActive,
+                            isGrouped = isGrouped,
+                            groupColor = associatedGroup?.hexColorBadge ?: "#000000",
+                            onClick = { viewModel.selectTab(tab.tabId) },
+                            onClose = { viewModel.closeTab(tab.tabId) },
+                            onLongClick = {
+                                selectedTabForGroup = tab
+                                showCreateGroupDialog = true
+                            }
+                        )
+                    }
                 }
             }
         }

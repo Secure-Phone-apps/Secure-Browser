@@ -39,6 +39,10 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     private val repository = BrowserRepository(database)
     private val databaseMutex = Mutex()
 
+    init {
+        companionContext = context
+    }
+
     // Master Key for Encrypted Shared Preferences
     private val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
     private val encryptedPrefs = EncryptedSharedPreferences.create(
@@ -764,6 +768,54 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             _tabsState.value = emptyList()
             createDefaultTab()
             _currentScreen.value = Screen.Browser
+        }
+    }
+
+    companion object {
+        @Volatile
+        private var companionContext: Context? = null
+
+        @Synchronized
+        fun saveEncryptedCredentials(domain: String, user: String, pass: String) {
+            val ctx = companionContext ?: return
+            try {
+                val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+                val prefs = EncryptedSharedPreferences.create(
+                    "secure_credentials",
+                    masterKeyAlias,
+                    ctx,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+                prefs.edit().apply {
+                    putString("${domain}_user", user)
+                    putString("${domain}_pass", pass)
+                    apply()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        @Synchronized
+        fun getEncryptedCredentials(domain: String): Pair<String?, String?> {
+            val ctx = companionContext ?: return Pair(null, null)
+            try {
+                val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+                val prefs = EncryptedSharedPreferences.create(
+                    "secure_credentials",
+                    masterKeyAlias,
+                    ctx,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+                val user = prefs.getString("${domain}_user", null)
+                val pass = prefs.getString("${domain}_pass", null)
+                return Pair(user, pass)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                return Pair(null, null)
+            }
         }
     }
 }

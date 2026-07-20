@@ -96,6 +96,70 @@ class HardenedWebViewClient(
             onTrackerBlocked(url)
             return shieldsEngine.generateBlankResponse()
         }
+
+        // REFERRER STRIPPING INTERCEPTION LOOP
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            try {
+                val requestHeaders = request.requestHeaders?.toMutableMap() ?: mutableMapOf()
+                val refererKeys = requestHeaders.keys.filter { it.equals("Referer", ignoreCase = true) }
+                for (key in refererKeys) {
+                    requestHeaders.remove(key)
+                }
+                requestHeaders["Referer"] = "no-referrer"
+
+                val connectionUrl = java.net.URL(url)
+                val connection = connectionUrl.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = request.method
+                
+                for ((key, value) in requestHeaders) {
+                    connection.addRequestProperty(key, value)
+                }
+                
+                connection.instanceFollowRedirects = false
+                connection.connectTimeout = 8000
+                connection.readTimeout = 8000
+                
+                connection.connect()
+                
+                val responseCode = connection.responseCode
+                val responseMessage = connection.responseMessage
+                val responseHeaders = mutableMapOf<String, String>()
+                for (i in 0..100) {
+                    val headerKey = connection.getHeaderFieldKey(i)
+                    val headerValue = connection.getHeaderField(i)
+                    if (headerKey == null && headerValue == null) break
+                    if (headerKey != null && headerValue != null) {
+                        responseHeaders[headerKey] = headerValue
+                    }
+                }
+                
+                val contentTypeHeader = connection.contentType ?: "text/html"
+                val contentType = contentTypeHeader.substringBefore(";").trim()
+                val encoding = if (contentTypeHeader.contains("charset=")) {
+                    contentTypeHeader.substringAfter("charset=").substringBefore(";").trim()
+                } else {
+                    "UTF-8"
+                }
+                
+                val inputStream = if (responseCode >= 400) {
+                    connection.errorStream ?: connection.inputStream
+                } else {
+                    connection.inputStream
+                }
+                
+                return WebResourceResponse(
+                    contentType,
+                    encoding,
+                    responseCode,
+                    responseMessage,
+                    responseHeaders,
+                    inputStream
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
         return super.shouldInterceptRequest(view, request)
     }
 
