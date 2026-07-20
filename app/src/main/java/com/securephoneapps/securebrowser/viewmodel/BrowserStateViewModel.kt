@@ -327,8 +327,37 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     // Tab Operations
+    private suspend fun enforceTabLimit() {
+        val currentTabs = _tabsState.value
+        val activeId = _activeTabId.value
+        val activeTabs = currentTabs.filter { !it.isSuspendedState }
+        if (activeTabs.size >= 30) {
+            val oldestBackgroundTab = activeTabs
+                .filter { it.tabId != activeId }
+                .minByOrNull { it.lastActiveTimestamp }
+            if (oldestBackgroundTab != null) {
+                repository.insertTab(oldestBackgroundTab.copy(isSuspendedState = true))
+            }
+        }
+    }
+
+    fun prefetchDomainConnections(url: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val uri = android.net.Uri.parse(url)
+                val host = uri.host
+                if (!host.isNullOrEmpty()) {
+                    java.net.InetAddress.getAllByName(host)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun createNewTab(url: String = "about:blank", isIncognito: Boolean = false) {
         viewModelScope.launch {
+            enforceTabLimit()
             val tab = TabInstance(
                 tabId = UUID.randomUUID().toString(),
                 currentUrl = url,
@@ -344,6 +373,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
 
     fun createNewTabInGroup(url: String, isIncognito: Boolean = false) {
         viewModelScope.launch {
+            enforceTabLimit()
             val groupId = UUID.randomUUID().toString()
             val colorHex = "#0A84FF" // Default secure blue badge for link-created group
             repository.insertGroup(TabGroup(groupId = groupId, groupName = "Link Stack", hexColorBadge = colorHex))
@@ -562,6 +592,10 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         }
 
         return stripTrackingParameters(baseTarget)
+    }
+
+    fun executeUrlResolution(input: String): String {
+        return parseUrlOrSearch(input)
     }
 
     fun stripTrackingParameters(url: String): String {

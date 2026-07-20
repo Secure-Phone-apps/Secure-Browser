@@ -88,6 +88,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -314,7 +315,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
 fun configureEngineParameters(settings: WebSettings, viewModel: BrowserStateViewModel? = null) {
     settings.apply {
-        userAgentString = com.securephoneapps.securebrowser.engine.ShieldsCoreEngine().getRandomizedUserAgent()
+        val currentUA = viewModel?.selectedUserAgent?.value ?: com.securephoneapps.securebrowser.engine.ShieldsCoreEngine().getRandomizedUserAgent()
+        userAgentString = currentUA
         
         // FORCED WEB LAYOUT DARK MODE (Vivaldi Style)
         // Checks if global override is enabled or if device is in dark mode
@@ -333,10 +335,18 @@ fun configureEngineParameters(settings: WebSettings, viewModel: BrowserStateView
         allowContentAccess = false
         allowFileAccessFromFileURLs = false
         allowUniversalAccessFromFileURLs = false
-        databaseEnabled = false
+        databaseEnabled = true
         domStorageEnabled = true
-        useWideViewPort = true
-        loadWithOverviewMode = true
+        if (currentUA.contains("Mobile") || currentUA.contains("Android")) {
+            // FIXED MOBILE MAPPING: Forces Google to read the screen width natively as a mobile frame
+            useWideViewPort = false
+            loadWithOverviewMode = false
+            textZoom = 100 // Prevent scale distortions
+        } else {
+            // DESKTOP MODE FALLBACK: Forces full width desktop site layouts
+            useWideViewPort = true
+            loadWithOverviewMode = true
+        }
         savePassword = false
         saveFormData = false
         mediaPlaybackRequiresUserGesture = true
@@ -528,6 +538,7 @@ fun BrowserWorkspaceScreen(
     viewModel: BrowserStateViewModel,
     onWebViewBound: (WebView) -> Unit
 ) {
+    val context = LocalContext.current
     val tabs by viewModel.tabsState.collectAsState()
     val activeTabId by viewModel.activeTabId.collectAsState()
     val activeTab = tabs.find { it.tabId == activeTabId }
@@ -538,7 +549,9 @@ fun BrowserWorkspaceScreen(
     val httpsOnly by viewModel.httpsOnlyMode.collectAsState()
     val liveBlockedDomains by viewModel.liveBlockedDomains.collectAsState()
 
-    var inputUrl by remember { mutableStateOf("") }
+    var userTypedInput by remember { mutableStateOf("") }
+    var activeLoadingUrl by remember { mutableStateOf("") }
+    var lastLoadedUrl by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var sslSecured by remember { mutableStateOf(true) }
     var showBlockedBottomSheet by remember { mutableStateOf(false) }
@@ -554,6 +567,94 @@ fun BrowserWorkspaceScreen(
     val shieldsEngine = remember { ShieldsCoreEngine() }
     val coroutineScope = rememberCoroutineScope()
 
+    var triggerUrlLoad by remember { mutableStateOf("") }
+
+    val sharedWebView = remember {
+        WebView(context).apply {
+            onWebViewBound(this)
+            webViewInstance = this
+
+            // Encrypted, isolated download interceptor pipeline
+            setDownloadListener(SecureContainerDownloadListener(context, coroutineScope) { pdfUrl ->
+                triggerUrlLoad = pdfUrl
+            })
+
+            // Apply strict Sandbox parameters
+            configureEngineParameters(settings, viewModel)
+            settings.javaScriptEnabled = jsEnabled
+            settings.userAgentString = if (selectedUa.contains("Mozilla/5.0 (Linux; Android 10; K)") || selectedUa.isBlank()) {
+                shieldsEngine.getRandomizedUserAgent()
+            } else {
+                selectedUa
+            }
+
+            // Block third-party cookies if toggled
+            val cookieManager = CookieManager.getInstance()
+            cookieManager.setAcceptCookie(true)
+            cookieManager.setAcceptThirdPartyCookies(this, !blockThirdPartyCookies)
+
+            // Register Bridge for telemetry feedback
+            addJavascriptInterface(
+                FingerprintShieldBridge(
+                    onCanvasFaked = { viewModel.incrementTelemetry(canvas = 1) },
+                    onFingerprintMocked = { type -> viewModel.incrementTelemetry(fingerprint = 1) }
+                ),
+                "FingerprintShield"
+            )
+
+            setOnLongClickListener { v ->
+                val result = (v as WebView).hitTestResult
+                if (result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || 
+                    result.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                    val url = result.extra
+                    if (!url.isNullOrBlank()) {
+                        longPressedUrl = url
+                        showLinkContextMenu = true
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+
+            webChromeClient = object : android.webkit.WebChromeClient() {
+                override fun onReceivedTitle(view: WebView?, title: String?) {
+                    super.onReceivedTitle(view, title)
+                    view?.evaluateJavascript("(function() { return document.querySelector('meta[name=\"theme-color\"]')?.content; })();") { color ->
+                        if (color != null && color != "null") {
+                            viewModel.activePageThemeColor.value = color.replace("\"", "")
+                        }
+                    }
+                }
+
+                override fun onReceivedIcon(view: WebView?, icon: android.graphics.Bitmap?) {
+                    super.onReceivedIcon(view, icon)
+                }
+
+                override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
+                    val isShutterEnabled = viewModel.isHardwareShutterActive.value
+                    if (isShutterEnabled && request != null) {
+                        val resources = request.resources
+                        val hasCameraOrMic = resources.any { res ->
+                            res == android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE ||
+                            res == android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                        }
+                        if (hasCameraOrMic) {
+                            request.deny()
+                            return
+                        }
+                    }
+                    super.onPermissionRequest(request)
+                }
+
+                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                    super.onProgressChanged(view, newProgress)
+                    viewModel.pageLoadingProgress.value = newProgress
+                }
+            }
+        }
+    }
+
     // MEMORY LEAK DETACHMENT
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose {
@@ -562,12 +663,79 @@ fun BrowserWorkspaceScreen(
         }
     }
 
-    // Synchronize Input Field when active tab switches or navigates
-    LaunchedEffect(activeTab?.currentUrl) {
-        if (activeTab != null) {
-            inputUrl = if (activeTab.currentUrl == "about:blank") "" else activeTab.currentUrl
-            sslSecured = activeTab.currentUrl.startsWith("https://", ignoreCase = true)
+    LaunchedEffect(triggerUrlLoad) {
+        if (triggerUrlLoad.isNotBlank()) {
+            sharedWebView.loadUrl(triggerUrlLoad)
         }
+    }
+
+    LaunchedEffect(jsEnabled) {
+        sharedWebView.settings.javaScriptEnabled = jsEnabled
+    }
+
+    LaunchedEffect(selectedUa) {
+        sharedWebView.settings.userAgentString = if (selectedUa.contains("Mozilla/5.0 (Linux; Android 10; K)") || selectedUa.isBlank()) {
+            shieldsEngine.getRandomizedUserAgent()
+        } else {
+            selectedUa
+        }
+    }
+
+    LaunchedEffect(blockThirdPartyCookies) {
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptThirdPartyCookies(sharedWebView, !blockThirdPartyCookies)
+    }
+
+    // Synchronize Input Field and load state strictly when active tab or URL switches
+    LaunchedEffect(activeTab?.tabId, activeTab?.currentUrl) {
+        if (activeTab != null) {
+            val current = activeTab.currentUrl
+            
+            val cleanInput = userTypedInput.trim().trimEnd('/')
+            val cleanCurrent = current.trim().trimEnd('/')
+            if (cleanInput.isBlank() || (
+                !cleanCurrent.equals(cleanInput, ignoreCase = true) && 
+                !cleanCurrent.contains(cleanInput, ignoreCase = true) && 
+                !cleanInput.contains(cleanCurrent, ignoreCase = true)
+            )) {
+                userTypedInput = if (current == "about:blank") "" else current
+            }
+            activeLoadingUrl = current
+
+            val oldTabId = sharedWebView.tag as? String
+            if (oldTabId != activeTab.tabId) {
+                if (oldTabId != null) {
+                    viewModel.saveTabState(oldTabId, sharedWebView)
+                }
+                sharedWebView.tag = activeTab.tabId
+                val state = activeTab.serializedEngineState
+                if (state != null) {
+                    val bundle = viewModel.bytesToBundle(state)
+                    if (bundle != null) {
+                        sharedWebView.restoreState(bundle)
+                    } else {
+                        triggerUrlLoad = current
+                    }
+                } else {
+                    triggerUrlLoad = current
+                }
+            } else {
+                fun urlsMatch(url1: String?, url2: String?): Boolean {
+                    if (url1 == url2) return true
+                    if (url1 == null || url2 == null) return false
+                    val u1 = url1.trim().trimEnd('/')
+                    val u2 = url2.trim().trimEnd('/')
+                    return u1.equals(u2, ignoreCase = true)
+                }
+                if (!urlsMatch(sharedWebView.url, current) && current.isNotEmpty()) {
+                    triggerUrlLoad = current
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(activeLoadingUrl) {
+        sslSecured = activeLoadingUrl.startsWith("https://", ignoreCase = true)
     }
 
     Scaffold(
@@ -631,8 +799,8 @@ fun BrowserWorkspaceScreen(
 
                 // Editable Input Area
                 OutlinedTextField(
-                    value = inputUrl,
-                    onValueChange = { inputUrl = it },
+                    value = userTypedInput,
+                    onValueChange = { userTypedInput = it },
                     placeholder = { Text("Search or type URL securely...", color = Color(0xFF94A3B8), fontSize = 13.sp) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
@@ -643,14 +811,16 @@ fun BrowserWorkspaceScreen(
                         onSearch = {
                             keyboardController?.hide()
                             focusManager.clearFocus()
-                            if (inputUrl.isNotBlank()) {
-                                var target = viewModel.parseUrlOrSearch(inputUrl)
+                            if (userTypedInput.isNotBlank()) {
+                                var target = viewModel.executeUrlResolution(userTypedInput)
                                 target = shieldsEngine.stripTrackingParameters(target)
                                 if (httpsOnly && target.startsWith("http://", ignoreCase = true)) {
                                     target = target.replaceFirst("http://", "https://", ignoreCase = true)
                                 }
                                 viewModel.clearLiveTelemetry()
+                                activeLoadingUrl = target
                                 viewModel.updateActiveTabUrl(target, target)
+                                triggerUrlLoad = target
                             }
                         }
                     ),
@@ -692,9 +862,9 @@ fun BrowserWorkspaceScreen(
                 }
             }
 
-            // Sleek horizontal progress bar linked dynamically to page progress, hiding when reached 100
+            // Ensure the linear Jetpack Compose progress indicator bar only recomposes when progress is between 1 and 99, and completely sets visibility to gone when it reaches 100 to save rendering cycles.
             val progress by viewModel.pageLoadingProgress.collectAsState()
-            if (progress > 0 && progress < 100) {
+            if (progress in 1..99) {
                 androidx.compose.material3.LinearProgressIndicator(
                     progress = progress / 100f,
                     modifier = Modifier.fillMaxWidth().height(3.dp),
@@ -906,172 +1076,36 @@ fun BrowserWorkspaceScreen(
             } else {
                 // -- ISOLATED SYSTEM WEBVIEW CONTAINER --
                 AndroidView(
-                    factory = { context ->
-                        WebView(context).apply {
-                            onWebViewBound(this)
-                            webViewInstance = this
-
-                            // Encrypted, isolated download interceptor pipeline
-                            setDownloadListener(SecureContainerDownloadListener(context, coroutineScope) { pdfUrl ->
-                                this.loadUrl(pdfUrl)
-                            })
-
-                            // Apply strict Sandbox parameters
-                            configureEngineParameters(settings, viewModel)
-                            settings.javaScriptEnabled = jsEnabled
-                            settings.userAgentString = if (selectedUa.contains("Mozilla/5.0 (Linux; Android 10; K)") || selectedUa.isBlank()) {
-                                shieldsEngine.getRandomizedUserAgent()
-                            } else {
-                                selectedUa
-                            }
-
-                            // Block third-party cookies if toggled
-                            val cookieManager = CookieManager.getInstance()
-                            cookieManager.setAcceptCookie(true)
-                            cookieManager.setAcceptThirdPartyCookies(this, !blockThirdPartyCookies)
-
-                            // Register Bridge for telemetry feedback
-                            addJavascriptInterface(
-                                FingerprintShieldBridge(
-                                    onCanvasFaked = { viewModel.incrementTelemetry(canvas = 1) },
-                                    onFingerprintMocked = { type -> viewModel.incrementTelemetry(fingerprint = 1) }
-                                ),
-                                "FingerprintShield"
-                            )
-
-                            setOnLongClickListener { v ->
-                                val result = (v as WebView).hitTestResult
-                                if (result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || 
-                                    result.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
-                                    val url = result.extra
-                                    if (!url.isNullOrBlank()) {
-                                        longPressedUrl = url
-                                        showLinkContextMenu = true
-                                    }
-                                    true
-                                } else {
-                                    false
-                                }
-                            }
-
-                            webViewClient = HardenedWebViewClient(
-                                shieldsEngine = shieldsEngine,
-                                onTrackerBlocked = { url -> viewModel.incrementTelemetry(trackers = 1, url = url) },
-                                onCanvasFaked = { viewModel.incrementTelemetry(canvas = 1) },
-                                onFingerprintMocked = { type -> viewModel.incrementTelemetry(fingerprint = 1) },
-                                onPageStartedCallback = { _ ->
-                                    isLoading = true
-                                    canGoBack = canGoBack()
-                                    canGoForward = canGoForward()
-                                    viewModel.clearLiveTelemetry()
-                                    // Reset theme color on new page start
-                                    viewModel.activePageThemeColor.value = null
-                                },
-                                onPageFinishedCallback = { url, title ->
-                                    isLoading = false
-                                    canGoBack = canGoBack()
-                                    canGoForward = canGoForward()
-                                    
-                                    // Handle internal navigation state syncing
-                                    viewModel.updateActiveTabUrl(url, title)
-                                }
-                            )
-
-                            webChromeClient = object : WebChromeClient() {
-                                override fun onReceivedTitle(view: WebView?, title: String?) {
-                                    super.onReceivedTitle(view, title)
-                                    // Intercept theme color data properties via JS bridge fallback
-                                    view?.evaluateJavascript("(function() { return document.querySelector('meta[name=\"theme-color\"]')?.content; })();") { color ->
-                                        if (color != null && color != "null") {
-                                            viewModel.activePageThemeColor.value = color.replace("\"", "")
-                                        }
-                                    }
-                                }
-
-                                override fun onReceivedIcon(view: WebView?, icon: android.graphics.Bitmap?) {
-                                    super.onReceivedIcon(view, icon)
-                                    // Could potentially extract dominant color from icon here if theme-color meta is missing
-                                }
-
-                                override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
-                                    val isShutterEnabled = viewModel.isHardwareShutterActive.value
-                                    if (isShutterEnabled && request != null) {
-                                        val resources = request.resources
-                                        val hasCameraOrMic = resources.any { res ->
-                                            res == android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE ||
-                                            res == android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE
-                                        }
-                                        if (hasCameraOrMic) {
-                                            request.deny()
-                                            return
-                                        }
-                                    }
-                                    super.onPermissionRequest(request)
-                                }
-
-                                override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                                    super.onProgressChanged(view, newProgress)
-                                    viewModel.pageLoadingProgress.value = newProgress
-                                }
-                            }
-                        }
-                    },
-                    update = { webView ->
-                        // Dynamically adjust JavaScript execution policy
-                        webView.settings.javaScriptEnabled = jsEnabled
-                        webView.settings.userAgentString = if (selectedUa.contains("Mozilla/5.0 (Linux; Android 10; K)") || selectedUa.isBlank()) {
-                            shieldsEngine.getRandomizedUserAgent()
-                        } else {
-                            selectedUa
-                        }
-                        
-                        val cookieManager = CookieManager.getInstance()
-                        cookieManager.setAcceptThirdPartyCookies(webView, !blockThirdPartyCookies)
-
-                        if (activeTab != null) {
-                            val oldTabId = webView.tag as? String
-                            if (oldTabId != activeTab.tabId) {
-                                // 1. Save the previous tab's state before switching
-                                if (oldTabId != null) {
-                                    viewModel.saveTabState(oldTabId, webView)
-                                }
+                    factory = {
+                        webViewInstance = sharedWebView
+                        sharedWebView.webViewClient = HardenedWebViewClient(
+                            shieldsEngine = shieldsEngine,
+                            onTrackerBlocked = { url -> viewModel.incrementTelemetry(trackers = 1, url = url) },
+                            onCanvasFaked = { viewModel.incrementTelemetry(canvas = 1) },
+                            onFingerprintMocked = { type -> viewModel.incrementTelemetry(fingerprint = 1) },
+                            onPageStartedCallback = { loadedUrl ->
+                                isLoading = true
+                                canGoBack = sharedWebView.canGoBack()
+                                canGoForward = sharedWebView.canGoForward()
+                                viewModel.clearLiveTelemetry()
+                                viewModel.activePageThemeColor.value = null
                                 
-                                // 2. Update tag to current active tab ID
-                                webView.tag = activeTab.tabId
+                                lastLoadedUrl = loadedUrl
+                                activeLoadingUrl = loadedUrl
+                            },
+                            onPageFinishedCallback = { url, title ->
+                                isLoading = false
+                                canGoBack = sharedWebView.canGoBack()
+                                canGoForward = sharedWebView.canGoForward()
                                 
-                                // 3. Restore serialized state if present, otherwise load url
-                                val state = activeTab.serializedEngineState
-                                if (state != null) {
-                                    val bundle = viewModel.bytesToBundle(state)
-                                    if (bundle != null) {
-                                        webView.restoreState(bundle)
-                                    } else {
-                                        webView.loadUrl(activeTab.currentUrl)
-                                    }
-                                } else {
-                                    webView.loadUrl(activeTab.currentUrl)
-                                }
-                            } else {
-                                // If the active tab ID is the same but the URL has changed in the viewModel, load it
-                                fun urlsMatch(url1: String?, url2: String?): Boolean {
-                                    if (url1 == url2) return true
-                                    if (url1 == null || url2 == null) return false
-                                    val u1 = url1.trim().trimEnd('/')
-                                    val u2 = url2.trim().trimEnd('/')
-                                    return u1.equals(u2, ignoreCase = true)
-                                }
-
-                                if (!urlsMatch(webView.url, activeTab.currentUrl) && activeTab.currentUrl.isNotEmpty()) {
-                                    webView.loadUrl(activeTab.currentUrl)
-                                }
+                                // Handle internal navigation state syncing
+                                viewModel.updateActiveTabUrl(url, title)
                             }
-                            
-                            // Synchronize back/forward status
-                            canGoBack = webView.canGoBack()
-                            canGoForward = webView.canGoForward()
-                        }
+                        )
+                        sharedWebView
                     },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    update = { /* Leave this entirely EMPTY to prevent recomposition reloads */ }
                 )
             }
 

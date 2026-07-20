@@ -37,6 +37,7 @@ class HardenedWebViewClient(
 
     private val registeredWebViews = mutableSetOf<Int>()
     private var lastHost: String? = null
+    private var baseUserAgent: String? = null
 
     private fun sweepPreviousOrigin(url: String?) {
         url?.let {
@@ -54,6 +55,30 @@ class HardenedWebViewClient(
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+    }
+
+    private fun cleanTrackingParameters(url: String): String {
+        try {
+            val uri = android.net.Uri.parse(url)
+            if (uri.query == null) return url
+            val parameterNames = uri.queryParameterNames
+            val trackingParams = setOf("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid", "ref", "affiliate", "tracking_id")
+            val filteredNames = parameterNames.filter { param ->
+                !trackingParams.contains(param.lowercase()) && !param.lowercase().startsWith("utm_")
+            }
+            if (filteredNames.size == parameterNames.size) return url
+            
+            val builder = uri.buildUpon().clearQuery()
+            for (name in filteredNames) {
+                val values = uri.getQueryParameters(name)
+                for (value in values) {
+                    builder.appendQueryParameter(name, value)
+                }
+            }
+            return builder.build().toString()
+        } catch (e: Exception) {
+            return url
         }
     }
 
@@ -135,8 +160,8 @@ class HardenedWebViewClient(
     private val fingerprintInjectionScript: String = """
         (function() {
             try {
-                // 1. Webdriver masking
-                Object.defineProperty(navigator, 'webdriver', { get: () => false });
+                // 1. Webdriver masking - clean reCAPTCHA natural override
+                delete navigator.__proto__.webdriver;
 
                 // WebRTC Isolation & IP leak prevention
                 if (window.RTCPeerConnection || window.webkitRTCPeerConnection) {
@@ -160,68 +185,23 @@ class HardenedWebViewClient(
                             const orgGetImageData = ctx.getImageData;
                             ctx.getImageData = function(x, y, w, h) {
                                 const imgData = orgGetImageData.apply(this, arguments);
-                                if (imgData && imgData.data && imgData.data.length > 4) {
-                                    // Inject subtle noise into first color channel to corrupt fingerprint hash
-                                    imgData.data[0] = (imgData.data[0] + 1) % 256;
+                                if (imgData && imgData.data && imgData.data.length >= 16) {
+                                    // Inject consistent shift into the last pixel quadrant during heavy operations
+                                    const len = imgData.data.length;
+                                    const lastPixelIdx = len - 4;
+                                    imgData.data[lastPixelIdx] = (imgData.data[lastPixelIdx] + 1) % 256;
                                 }
                                 if (window.FingerprintShield) {
                                     window.FingerprintShield.onCanvasFakeTriggered();
                                 }
                                 return imgData;
                             };
-                            
-                            // Scramble measureText for font fingerprinting protection
-                            const orgMeasureText = ctx.measureText;
-                            ctx.measureText = function() {
-                                const metrics = orgMeasureText.apply(this, arguments);
-                                const scramble = (val) => val + (Math.random() * 0.0002 - 0.0001);
-                                if (window.FingerprintShield) window.FingerprintShield.onFingerprintMockTriggered("font_measure");
-                                return {
-                                    width: scramble(metrics.width),
-                                    actualBoundingBoxLeft: metrics.actualBoundingBoxLeft,
-                                    actualBoundingBoxRight: metrics.actualBoundingBoxRight,
-                                    fontBoundingBoxAscent: metrics.fontBoundingBoxAscent,
-                                    fontBoundingBoxDescent: metrics.fontBoundingBoxDescent,
-                                    actualBoundingBoxAscent: metrics.actualBoundingBoxAscent,
-                                    actualBoundingBoxDescent: metrics.actualBoundingBoxDescent,
-                                    emHeightAscent: metrics.emHeightAscent,
-                                    emHeightDescent: metrics.emHeightDescent,
-                                    hangingBaseline: metrics.hangingBaseline,
-                                    alphabeticBaseline: metrics.alphabeticBaseline,
-                                    ideographicBaseline: metrics.ideographicBaseline
-                                };
-                            };
                         }
                         return ctx;
                     };
                 }
 
-                // 2.1 Element Layout Scrambling (Fingerprinting Shield)
-                const scrambleLayout = (val) => val + (Math.random() * 0.0002 - 0.0001);
-                const orgGetBoundingClientRect = Element.prototype.getBoundingClientRect;
-                Element.prototype.getBoundingClientRect = function() {
-                    const rect = orgGetBoundingClientRect.apply(this, arguments);
-                    if (window.FingerprintShield) window.FingerprintShield.onFingerprintMockTriggered("layout_rect");
-                    return {
-                        x: scrambleLayout(rect.x), y: scrambleLayout(rect.y),
-                        width: scrambleLayout(rect.width), height: scrambleLayout(rect.height),
-                        top: scrambleLayout(rect.top), right: scrambleLayout(rect.right),
-                        bottom: scrambleLayout(rect.bottom), left: scrambleLayout(rect.left),
-                        toJSON: () => JSON.stringify(rect)
-                    };
-                };
 
-                const orgGetClientRects = Element.prototype.getClientRects;
-                Element.prototype.getClientRects = function() {
-                    const list = orgGetClientRects.apply(this, arguments);
-                    if (window.FingerprintShield) window.FingerprintShield.onFingerprintMockTriggered("layout_list");
-                    return Array.from(list).map(rect => ({
-                        x: scrambleLayout(rect.x), y: scrambleLayout(rect.y),
-                        width: scrambleLayout(rect.width), height: scrambleLayout(rect.height),
-                        top: scrambleLayout(rect.top), right: scrambleLayout(rect.right),
-                        bottom: scrambleLayout(rect.bottom), left: scrambleLayout(rect.left)
-                    }));
-                };
 
                 // 3. WebGL GPU and Vendor virtualization fakes
                 if (window.WebGLRenderingContext) {
@@ -372,13 +352,50 @@ class HardenedWebViewClient(
         sweepPreviousOrigin(url)
         if (view != null) {
             registerDocumentStartScripts(view)
+            
+            val currentUA = view.settings.userAgentString
+            val googleUA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+            if (currentUA != googleUA) {
+                baseUserAgent = currentUA
+            }
+            
+            url?.let {
+                try {
+                    val uri = android.net.Uri.parse(it)
+                    val host = uri.host
+                    if (host != null && (host.endsWith("google.com") || host == "google.com" || host.contains(".google."))) {
+                        view.settings.userAgentString = googleUA
+                        view.settings.useWideViewPort = false
+                        view.settings.loadWithOverviewMode = false
+                        view.settings.textZoom = 100
+                    } else {
+                        val restoreUa = baseUserAgent
+                        if (restoreUa != null) {
+                            view.settings.userAgentString = restoreUa
+                            if (restoreUa.contains("Mobile") || restoreUa.contains("Android")) {
+                                view.settings.useWideViewPort = false
+                                view.settings.loadWithOverviewMode = false
+                                view.settings.textZoom = 100
+                            } else {
+                                view.settings.useWideViewPort = true
+                                view.settings.loadWithOverviewMode = true
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
         // Force-inject early scripts as a fallback if synchronous script binding is not supported
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             view?.evaluateJavascript(fingerprintInjectionScript, null)
             view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
         }
-        url?.let { onPageStartedCallback(it) }
+        url?.let {
+            val cleanedUrl = cleanTrackingParameters(it)
+            onPageStartedCallback(cleanedUrl)
+        }
     }
 
     override fun onPageFinished(view: WebView?, url: String?) {
