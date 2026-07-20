@@ -36,6 +36,26 @@ class HardenedWebViewClient(
 ) : WebViewClient() {
 
     private val registeredWebViews = mutableSetOf<Int>()
+    private var lastHost: String? = null
+
+    private fun sweepPreviousOrigin(url: String?) {
+        url?.let {
+            try {
+                val uri = android.net.Uri.parse(it)
+                val currentHost = uri.host
+                if (currentHost != null) {
+                    val previousHost = lastHost
+                    if (previousHost != null && previousHost != currentHost) {
+                        android.webkit.WebStorage.getInstance().deleteOrigin("https://$previousHost")
+                        android.webkit.WebStorage.getInstance().deleteOrigin("http://$previousHost")
+                    }
+                    lastHost = currentHost
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
         val url = request?.url?.toString() ?: return null
@@ -322,6 +342,7 @@ class HardenedWebViewClient(
 
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
+        sweepPreviousOrigin(url)
         if (view != null) {
             registerDocumentStartScripts(view)
         }
@@ -335,6 +356,7 @@ class HardenedWebViewClient(
 
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
+        sweepPreviousOrigin(url)
         // Reinforce injection on completion just in case of iframe or state resets
         view?.evaluateJavascript(fingerprintInjectionScript, null)
         view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)

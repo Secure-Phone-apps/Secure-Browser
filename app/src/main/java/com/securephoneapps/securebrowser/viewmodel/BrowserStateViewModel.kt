@@ -89,7 +89,19 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         encryptedPrefs.getString("custom_user_agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36") ?: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
     )
 
+    // DNS-over-HTTPS (DoH) & Custom Proxy config variables
+    val selectedDohProvider = MutableStateFlow(encryptedPrefs.getString("selected_doh_provider", "https://cloudflare-dns.com") ?: "https://cloudflare-dns.com")
+    val proxyEnabled = MutableStateFlow(encryptedPrefs.getBoolean("proxy_enabled", false))
+    val proxyHost = MutableStateFlow(encryptedPrefs.getString("proxy_host", "localhost") ?: "localhost")
+    val proxyPort = MutableStateFlow(encryptedPrefs.getInt("proxy_port", 9050))
+    val proxyType = MutableStateFlow(encryptedPrefs.getString("proxy_type", "SOCKS") ?: "SOCKS")
+
     init {
+        // Apply persistent proxy settings on boot
+        if (proxyEnabled.value) {
+            applySystemPropertiesProxy(proxyHost.value, proxyPort.value, proxyType.value)
+        }
+
         // Observe and load Tab States from DB
         viewModelScope.launch {
             repository.allTabs.collect { loadedTabs ->
@@ -137,6 +149,66 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             forcedDarkModeEnabled.value = enabled
             encryptedPrefs.edit().putBoolean("forced_dark_mode_enabled", enabled).apply()
+        }
+    }
+
+    fun updateDohProvider(url: String) {
+        viewModelScope.launch {
+            selectedDohProvider.value = url
+            encryptedPrefs.edit().putString("selected_doh_provider", url).apply()
+        }
+    }
+
+    fun setBrowserProxy(host: String, port: Int, type: String, enabled: Boolean) {
+        viewModelScope.launch {
+            proxyHost.value = host
+            proxyPort.value = port
+            proxyType.value = type
+            proxyEnabled.value = enabled
+            
+            encryptedPrefs.edit().apply {
+                putString("proxy_host", host)
+                putInt("proxy_port", port)
+                putString("proxy_type", type)
+                putBoolean("proxy_enabled", enabled)
+            }.apply()
+
+            if (enabled) {
+                applySystemPropertiesProxy(host, port, type)
+            } else {
+                try {
+                    System.clearProperty("socksProxyHost")
+                    System.clearProperty("socksProxyPort")
+                    System.clearProperty("http.proxyHost")
+                    System.clearProperty("http.proxyPort")
+                    System.clearProperty("https.proxyHost")
+                    System.clearProperty("https.proxyPort")
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    private fun applySystemPropertiesProxy(host: String, port: Int, type: String) {
+        try {
+            if (type.uppercase() == "SOCKS") {
+                System.setProperty("socksProxyHost", host)
+                System.setProperty("socksProxyPort", port.toString())
+                System.clearProperty("http.proxyHost")
+                System.clearProperty("http.proxyPort")
+                System.clearProperty("https.proxyHost")
+                System.clearProperty("https.proxyPort")
+            } else {
+                System.setProperty("http.proxyHost", host)
+                System.setProperty("http.proxyPort", port.toString())
+                System.setProperty("https.proxyHost", host)
+                System.setProperty("https.proxyPort", port.toString())
+                System.clearProperty("socksProxyHost")
+                System.clearProperty("socksProxyPort")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

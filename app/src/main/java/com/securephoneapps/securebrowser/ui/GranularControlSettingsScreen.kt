@@ -84,6 +84,12 @@ fun GranularControlSettingsScreen(
     val searchEngineVal by viewModel.searchEngine.collectAsState()
     val customSearchEngineUrlVal by viewModel.customSearchEngineUrl.collectAsState()
     val userAgentVal by viewModel.selectedUserAgent.collectAsState()
+    
+    val selectedDohProvider by viewModel.selectedDohProvider.collectAsState()
+    val proxyEnabled by viewModel.proxyEnabled.collectAsState()
+    val proxyHost by viewModel.proxyHost.collectAsState()
+    val proxyPort by viewModel.proxyPort.collectAsState()
+    val proxyType by viewModel.proxyType.collectAsState()
 
     var showUaDropdown by remember { mutableStateOf(false) }
     var exceptionInput by remember { mutableStateOf("") }
@@ -305,6 +311,156 @@ fun GranularControlSettingsScreen(
                         Column {
                             Text("Import Encrypted Backup", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             Text("Restore bookmarks from encrypted profile string", color = Color(0xFF64748B), fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // -- SECTION 3.6: Advanced Network Routing --
+            Text(
+                text = "ADVANCED NETWORK ROUTING",
+                fontSize = 11.sp,
+                color = Color(0xFF64748B),
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(12.dp)),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Encrypted DoH Selector
+                    Text("Encrypted DoH DNS Provider", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    
+                    var showDohDropdown by remember { mutableStateOf(false) }
+                    val dohProviders = listOf(
+                        "Default" to "Default",
+                        "Cloudflare" to "https://cloudflare-dns.com",
+                        "Quad9" to "https://dns.quad9.net",
+                        "AdGuard DNS" to "https://dns.adguard-dns.com"
+                    )
+                    
+                    ExposedDropdownMenuBox(
+                        expanded = showDohDropdown,
+                        onExpandedChange = { showDohDropdown = !showDohDropdown }
+                    ) {
+                        val currentDohName = dohProviders.find { it.second == selectedDohProvider }?.first ?: "Default"
+                        OutlinedTextField(
+                            value = currentDohName,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showDohDropdown) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color(0xFF0F172A),
+                                unfocusedTextColor = Color(0xFF475569),
+                                focusedContainerColor = Color(0xFFF8FAFC),
+                                unfocusedContainerColor = Color(0xFFF8FAFC),
+                                focusedBorderColor = Color(0xFF2563EB),
+                                unfocusedBorderColor = Color(0xFFE2E8F0)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = showDohDropdown,
+                            onDismissRequest = { showDohDropdown = false },
+                            modifier = Modifier.background(Color.White)
+                        ) {
+                            dohProviders.forEach { (name, url) ->
+                                DropdownMenuItem(
+                                    text = { Text(name, color = Color(0xFF0F172A)) },
+                                    onClick = {
+                                        viewModel.updateDohProvider(url)
+                                        showDohDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Proxy Settings Panel
+                    SettingToggleRow(
+                        title = "Enable Custom Proxy",
+                        subtitle = "Route WebKit traffic through custom SOCKS5/HTTP proxy (e.g. Tor)",
+                        checked = proxyEnabled,
+                        onCheckedChange = { viewModel.setBrowserProxy(proxyHost, proxyPort, proxyType, it) }
+                    )
+
+                    if (proxyEnabled) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            // Proxy Host field
+                            var hostInput by remember(proxyHost) { mutableStateOf(proxyHost) }
+                            OutlinedTextField(
+                                value = hostInput,
+                                onValueChange = { 
+                                    hostInput = it
+                                    viewModel.setBrowserProxy(it, proxyPort, proxyType, proxyEnabled)
+                                },
+                                label = { Text("Proxy Host") },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color(0xFF0F172A),
+                                    unfocusedTextColor = Color(0xFF475569),
+                                    focusedContainerColor = Color(0xFFF8FAFC),
+                                    unfocusedContainerColor = Color(0xFFF8FAFC)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            // Proxy Port field
+                            var portInput by remember(proxyPort) { mutableStateOf(proxyPort.toString()) }
+                            OutlinedTextField(
+                                value = portInput,
+                                onValueChange = { 
+                                    portInput = it
+                                    val portInt = it.toIntOrNull() ?: proxyPort
+                                    viewModel.setBrowserProxy(proxyHost, portInt, proxyType, proxyEnabled)
+                                },
+                                label = { Text("Proxy Port") },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color(0xFF0F172A),
+                                    unfocusedTextColor = Color(0xFF475569),
+                                    focusedContainerColor = Color(0xFFF8FAFC),
+                                    unfocusedContainerColor = Color(0xFFF8FAFC)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.width(100.dp)
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        // Proxy Type field (SOCKS vs HTTP toggle)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Proxy Type", color = Color(0xFF475569), fontSize = 14.sp)
+                            Spacer(modifier = Modifier.weight(1f))
+                            androidx.compose.material3.TextButton(
+                                onClick = { viewModel.setBrowserProxy(proxyHost, proxyPort, "SOCKS", proxyEnabled) }
+                            ) {
+                                Text("SOCKS5", color = if (proxyType == "SOCKS") Color(0xFF2563EB) else Color(0xFF94A3B8), fontWeight = if (proxyType == "SOCKS") FontWeight.Bold else FontWeight.Normal)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            androidx.compose.material3.TextButton(
+                                onClick = { viewModel.setBrowserProxy(proxyHost, proxyPort, "HTTP", proxyEnabled) }
+                            ) {
+                                Text("HTTP", color = if (proxyType == "HTTP") Color(0xFF2563EB) else Color(0xFF94A3B8), fontWeight = if (proxyType == "HTTP") FontWeight.Bold else FontWeight.Normal)
+                            }
                         }
                     }
                 }
