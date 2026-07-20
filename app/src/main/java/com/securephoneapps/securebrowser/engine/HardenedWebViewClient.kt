@@ -2,6 +2,7 @@ package com.securephoneapps.securebrowser.engine
 
 import android.graphics.Bitmap
 import android.net.http.SslError
+import android.content.Intent
 import android.webkit.JavascriptInterface
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceRequest
@@ -111,7 +112,8 @@ class HardenedWebViewClient(
                 val connection = connectionUrl.openConnection() as java.net.HttpURLConnection
                 connection.requestMethod = request.method
                 
-                for ((key, value) in requestHeaders) {
+                val obfuscatedHeaders = shieldsEngine.obfuscateHeaderSequence(requestHeaders)
+                for ((key, value) in obfuscatedHeaders) {
                     connection.addRequestProperty(key, value)
                 }
                 
@@ -176,6 +178,25 @@ class HardenedWebViewClient(
             }
         }
         return super.shouldInterceptRequest(view, url)
+    }
+
+    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+        val url = request?.url?.toString() ?: return false
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            return false
+        }
+        if (url.startsWith("mailto:") || url.startsWith("tel:") || url.startsWith("sms:") || url.startsWith("intent:")) {
+            try {
+                val context = view?.context ?: return false
+                val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+                return true
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        return super.shouldOverrideUrlLoading(view, request)
     }
 
     private fun isMalicious(host: String): Boolean {

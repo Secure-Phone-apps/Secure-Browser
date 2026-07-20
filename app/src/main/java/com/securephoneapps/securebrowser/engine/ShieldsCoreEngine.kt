@@ -401,4 +401,33 @@ class ShieldsCoreEngine {
             emptyStream
         )
     }
+
+    /**
+     * Deepens outbound request network metadata obfuscation by shuffling non-essential header sequences.
+     */
+    fun obfuscateHeaderSequence(headers: Map<String, String>): Map<String, String> {
+        val essentialKeys = setOf(
+            "host", "user-agent", "accept", "authorization", 
+            "content-type", "content-length", "connection"
+        )
+        val essentialHeaders = mutableMapOf<String, String>()
+        val nonEssentialHeaders = mutableListOf<Pair<String, String>>()
+        
+        for ((key, value) in headers) {
+            if (essentialKeys.contains(key.lowercase())) {
+                essentialHeaders[key] = value
+            } else {
+                nonEssentialHeaders.add(Pair(key, value))
+            }
+        }
+        
+        nonEssentialHeaders.shuffle()
+        
+        val result = LinkedHashMap<String, String>()
+        result.putAll(essentialHeaders)
+        for ((key, value) in nonEssentialHeaders) {
+            result[key] = value
+        }
+        return result
+    }
 }

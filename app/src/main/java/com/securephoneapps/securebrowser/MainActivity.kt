@@ -311,6 +311,33 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             super.onBackPressed()
         }
     }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val webView = activeWebView
+        if (webView != null) {
+            webView.evaluateJavascript(
+                "(function() { " +
+                "  var videos = document.getElementsByTagName('video'); " +
+                "  for (var i = 0; i < videos.length; i++) { " +
+                "    if (!videos[i].paused && !videos[i].ended) { return true; } " +
+                "  } " +
+                "  return false; " +
+                "})();"
+            ) { result ->
+                if (result == "true") {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        try {
+                            val params = android.app.PictureInPictureParams.Builder().build()
+                            enterPictureInPictureMode(params)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fun configureEngineParameters(settings: WebSettings, viewModel: BrowserStateViewModel? = null) {
