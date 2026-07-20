@@ -624,6 +624,7 @@ fun BrowserWorkspaceScreen(
     val selectedUa by viewModel.selectedUserAgent.collectAsState()
     val httpsOnly by viewModel.httpsOnlyMode.collectAsState()
     val liveBlockedDomains by viewModel.liveBlockedDomains.collectAsState()
+    val liveBlockedDomainsLog by viewModel.liveBlockedDomainsLog.collectAsState()
 
     var userTypedInput by remember { mutableStateOf("") }
     var activeLoadingUrl by remember { mutableStateOf("") }
@@ -1336,7 +1337,7 @@ fun BrowserWorkspaceScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        if (liveBlockedDomains.isEmpty()) {
+                        if (liveBlockedDomainsLog.isEmpty()) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1362,7 +1363,7 @@ fun BrowserWorkspaceScreen(
                                     .fillMaxWidth()
                                     .height(240.dp)
                             ) {
-                                items(liveBlockedDomains) { domain ->
+                                items(liveBlockedDomainsLog) { domain ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()

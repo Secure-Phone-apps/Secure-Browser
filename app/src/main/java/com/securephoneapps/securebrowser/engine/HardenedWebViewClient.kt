@@ -595,6 +595,28 @@ class HardenedWebViewClient(
                         }
                     }
                 }, true);
+
+                // 14. Battery status virtualization
+                if (navigator.getBattery) {
+                    navigator.getBattery = function() {
+                        if (window.FingerprintShield) {
+                            window.FingerprintShield.onFingerprintMockTriggered("battery_virtualized");
+                        }
+                        return Promise.resolve({
+                            charging: true,
+                            chargingTime: 0,
+                            dischargingTime: Infinity,
+                            level: 1.0,
+                            onchargingchange: null,
+                            onchargingtimechange: null,
+                            ondischargingtimechange: null,
+                            onlevelchange: null,
+                            addEventListener: function() {},
+                            removeEventListener: function() {},
+                            dispatchEvent: function() { return true; }
+                        });
+                    };
+                }
             } catch (e) {
                 console.error("Fingerprint shielding exception:", e);
             }

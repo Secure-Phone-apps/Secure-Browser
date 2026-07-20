@@ -87,6 +87,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val searchEngine = MutableStateFlow(encryptedPrefs.getString("search_engine", "DuckDuckGo") ?: "DuckDuckGo")
     val customSearchEngineUrl = MutableStateFlow(encryptedPrefs.getString("custom_search_engine_url", "https://duckduckgo.com") ?: "https://duckduckgo.com")
     val liveBlockedDomains = MutableStateFlow<List<String>>(emptyList())
+    val liveBlockedDomainsLog = MutableStateFlow<List<String>>(emptyList())
     val forcedDarkModeEnabled = MutableStateFlow(encryptedPrefs.getBoolean("forced_dark_mode_enabled", true))
     val activePageThemeColor = MutableStateFlow<String?>(null)
     val selectedUserAgent = MutableStateFlow(
@@ -669,6 +670,15 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         val newHost = extractHost(url)
         if (oldHost != null && newHost != null && oldHost != newHost) {
             viewModelScope.launch(Dispatchers.Main) {
+                try {
+                    android.webkit.WebStorage.getInstance().deleteOrigin(oldHost)
+                } catch (e: Exception) {}
+                try {
+                    android.webkit.WebStorage.getInstance().deleteOrigin("https://$oldHost")
+                } catch (e: Exception) {}
+                try {
+                    android.webkit.WebStorage.getInstance().deleteOrigin("http://$oldHost")
+                } catch (e: Exception) {}
                 WebStorage.getInstance().deleteAllData()
                 CookieManager.getInstance().flush()
             }
@@ -945,6 +955,10 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             if (!currentList.contains(host)) {
                 liveBlockedDomains.value = currentList + host
             }
+            val currentLog = liveBlockedDomainsLog.value
+            if (!currentLog.contains(host)) {
+                liveBlockedDomainsLog.value = listOf(host) + currentLog
+            }
         }
         viewModelScope.launch {
             val current = repository.getTelemetry() ?: ShieldTelemetry()
@@ -960,6 +974,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
 
     fun clearLiveTelemetry() {
         liveBlockedDomains.value = emptyList()
+        liveBlockedDomainsLog.value = emptyList()
     }
 
     private fun extractHost(url: String): String? {
