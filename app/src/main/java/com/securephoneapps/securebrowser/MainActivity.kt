@@ -5,6 +5,10 @@ import android.os.Bundle
 import android.os.Build
 import android.app.role.RoleManager
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
+import android.content.Intent
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -184,12 +188,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // NATIVE BROWSER ROLE REQUEST (Platform Compliance Routine)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
-            if (roleManager.isRoleAvailable(RoleManager.ROLE_BROWSER) && !roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
-                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
-                roleRequestLauncher.launch(intent)
+        // NATIVE BROWSER ROLE REQUEST (Stability Fix: Defer until after resume to avoid 16-bit crash)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
+                    if (roleManager.isRoleAvailable(RoleManager.ROLE_BROWSER) && !roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
+                        roleRequestLauncher.launch(intent)
+                    }
+                }
             }
         }
 
