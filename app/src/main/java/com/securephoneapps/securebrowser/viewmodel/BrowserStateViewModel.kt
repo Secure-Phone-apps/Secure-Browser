@@ -309,9 +309,10 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                 
                 // 2. Clear all WebView data and cookies
                 withContext(Dispatchers.Main) {
-                    CookieManager.getInstance().removeAllCookies(null)
-                    CookieManager.getInstance().flush()
-                    WebStorage.getInstance().deleteAllData()
+                    android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                    android.webkit.CookieManager.getInstance().flush()
+                    android.webkit.WebStorage.getInstance().deleteAllData()
+                    android.webkit.GeolocationPermissions.getInstance().clearAll()
                 }
                 
                 // 3. Clear in-memory state

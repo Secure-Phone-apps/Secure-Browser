@@ -87,6 +87,13 @@ class HardenedWebViewClient(
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
         val url = request?.url?.toString() ?: return null
         
+        // PDF path validation block
+        if (url.contains("viewer.html", ignoreCase = true) || url.contains("pdfjs", ignoreCase = true)) {
+            if (!url.startsWith("file:///android_asset/pdfjs/")) {
+                return WebResourceResponse("text/plain", "UTF-8", "Blocked: PDF viewer must load strictly from local app resources.".byteInputStream())
+            }
+        }
+        
         // PHISHING & MALWARE FIREWALL INTERCEPTION
         // High-speed malicious domain analyzer check
         val host = request.url.host ?: ""
@@ -168,6 +175,12 @@ class HardenedWebViewClient(
 
     override fun shouldInterceptRequest(view: WebView?, url: String?): WebResourceResponse? {
         if (url != null) {
+            // PDF path validation block
+            if (url.contains("viewer.html", ignoreCase = true) || url.contains("pdfjs", ignoreCase = true)) {
+                if (!url.startsWith("file:///android_asset/pdfjs/")) {
+                    return WebResourceResponse("text/plain", "UTF-8", "Blocked: PDF viewer must load strictly from local app resources.".byteInputStream())
+                }
+            }
             val uri = android.net.Uri.parse(url)
             val host = uri.host ?: ""
             if (isMalicious(host)) {
@@ -183,6 +196,11 @@ class HardenedWebViewClient(
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val url = request?.url?.toString() ?: return false
+        if (url.contains("viewer.html", ignoreCase = true) || url.contains("pdfjs", ignoreCase = true)) {
+            if (!url.startsWith("file:///android_asset/pdfjs/")) {
+                return true // cancel load
+            }
+        }
         if (url.startsWith("http://") || url.startsWith("https://")) {
             return false
         }
@@ -378,22 +396,34 @@ class HardenedWebViewClient(
                 }
 
                 // 5. Battery profiling isolation
-                if (navigator.getBattery) {
-                    navigator.getBattery = function() {
-                        if (window.FingerprintShield) {
-                            window.FingerprintShield.onFingerprintMockTriggered("battery");
-                        }
-                        return Promise.resolve({
-                            charging: true,
-                            chargingTime: 0,
-                            dischargingTime: Infinity,
-                            level: 1.0,
-                            onchargingchange: null,
-                            onchargingtimechange: null,
-                            ondischargingtimechange: null,
-                            onlevelchange: null
-                        });
-                    };
+                const fakeBattery = function() {
+                    if (window.FingerprintShield) {
+                        window.FingerprintShield.onFingerprintMockTriggered("battery");
+                    }
+                    return Promise.resolve({
+                        charging: true,
+                        chargingTime: 0,
+                        dischargingTime: Infinity,
+                        level: 1.0,
+                        onchargingchange: null,
+                        onchargingtimechange: null,
+                        ondischargingtimechange: null,
+                        onlevelchange: null
+                    });
+                };
+                Object.defineProperty(navigator, 'getBattery', {
+                    value: fakeBattery,
+                    writable: true,
+                    configurable: true,
+                    enumerable: true
+                });
+                if (typeof Navigator !== 'undefined' && Navigator.prototype) {
+                    Object.defineProperty(Navigator.prototype, 'getBattery', {
+                        value: fakeBattery,
+                        writable: true,
+                        configurable: true,
+                        enumerable: true
+                    });
                 }
 
                 // 6. Language & Localization Masking

@@ -327,6 +327,32 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
     }
 
+    fun captureTabStateSnapshot(webView: WebView, tabId: String) {
+        try {
+            val width = webView.width
+            val height = webView.height
+            if (width <= 0 || height <= 0) return
+            
+            val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            webView.draw(canvas)
+            
+            val cacheDir = File(filesDir, "encrypted_snapshots")
+            if (!cacheDir.exists()) {
+                cacheDir.mkdirs()
+            }
+            val snapshotFile = File(cacheDir, "${tabId}_thumb.png")
+            
+            val bos = java.io.BufferedOutputStream(java.io.FileOutputStream(snapshotFile))
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, bos)
+            bos.flush()
+            bos.close()
+            bitmap.recycle()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val webView = activeWebView
