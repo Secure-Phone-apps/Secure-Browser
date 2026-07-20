@@ -108,6 +108,11 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val restrictLocalSubnets = MutableStateFlow(encryptedPrefs.getBoolean("restrict_local_subnets", true))
     val userScriptsList = MutableStateFlow<List<Pair<String, String>>>(emptyList())
     val proxyDiagnosticState = MutableStateFlow("")
+    val activeMediaDownloadTarget = MutableStateFlow<String?>(null)
+
+    fun updateActiveMediaDownloadTarget(url: String?) {
+        activeMediaDownloadTarget.value = url
+    }
 
     init {
         // Prune stale cache on boot if it crosses 200MB ceiling

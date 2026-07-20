@@ -419,6 +419,8 @@ fun configureEngineParameters(settings: WebSettings, viewModel: BrowserStateView
         saveFormData = false
         mediaPlaybackRequiresUserGesture = false
         mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        setSupportMultipleWindows(true)
+        javaScriptCanOpenWindowsAutomatically = false
         
         // Geolocation block
         setGeolocationEnabled(false)
@@ -532,7 +534,7 @@ class SecureContainerDownloadListener(
 
                     if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                         val fileName = getFileName(url, contentDisposition, mimetype)
-                        val downloadsDir = File(context.filesDir, "secure_downloads")
+                        val downloadsDir = File(context.noBackupFilesDir, "secure_downloads")
                         if (!downloadsDir.exists()) {
                             downloadsDir.mkdirs()
                         }
@@ -723,6 +725,33 @@ fun BrowserWorkspaceScreen(
                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
                     super.onProgressChanged(view, newProgress)
                     viewModel.pageLoadingProgress.value = newProgress
+                }
+
+                override fun onCreateWindow(
+                    view: WebView?,
+                    isDialog: Boolean,
+                    isUserGesture: Boolean,
+                    resultMsg: android.os.Message?
+                ): Boolean {
+                    val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+                    val dummyWebView = WebView(view?.context ?: return false)
+                    dummyWebView.webViewClient = object : android.webkit.WebViewClient() {
+                        override fun shouldOverrideUrlLoading(v: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                            val url = request?.url?.toString() ?: return false
+                            viewModel.createNewTab(url)
+                            return true
+                        }
+                        @Deprecated("Deprecated in Java")
+                        override fun shouldOverrideUrlLoading(v: WebView?, url: String?): Boolean {
+                            if (url != null) {
+                                viewModel.createNewTab(url)
+                            }
+                            return true
+                        }
+                    }
+                    transport.webView = dummyWebView
+                    resultMsg.sendToTarget()
+                    return true
                 }
             }
         }

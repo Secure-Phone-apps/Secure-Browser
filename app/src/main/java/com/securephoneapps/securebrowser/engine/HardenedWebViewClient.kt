@@ -176,6 +176,17 @@ class HardenedWebViewClient(
                 
                 val contentTypeHeader = connection.contentType ?: "text/html"
                 val contentType = contentTypeHeader.substringBefore(";").trim()
+                
+                // Stream Media Sniffer: evaluates media mime-types & streaming extensions
+                if (contentType.contains("video/", ignoreCase = true) || 
+                    contentType.contains("audio/mpeg", ignoreCase = true) || 
+                    contentType.contains("application/x-mpegURL", ignoreCase = true) || 
+                    contentType.contains("application/vnd.apple.mpegurl", ignoreCase = true) ||
+                    url.contains(".mp4", ignoreCase = true) || 
+                    url.contains(".m3u8", ignoreCase = true)) {
+                    viewModel?.updateActiveMediaDownloadTarget(url)
+                }
+
                 val encoding = if (contentTypeHeader.contains("charset=")) {
                     contentTypeHeader.substringAfter("charset=").substringBefore(";").trim()
                 } else {
