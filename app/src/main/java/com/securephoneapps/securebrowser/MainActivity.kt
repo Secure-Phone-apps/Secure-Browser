@@ -127,6 +127,9 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
 
+import android.content.Context
+import android.print.PrintManager
+
 class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     private var activeWebView: WebView? = null
@@ -309,6 +312,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             activeWebView!!.goBack()
         } else {
             super.onBackPressed()
+        }
+    }
+
+    fun exportCurrentPageToPdf(webView: WebView, jobName: String) {
+        try {
+            val printManager = getSystemService(Context.PRINT_SERVICE) as PrintManager
+            val printAdapter = webView.createPrintDocumentAdapter(jobName)
+            printManager.print(jobName, printAdapter, android.print.PrintAttributes.Builder().build())
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -1127,7 +1140,8 @@ fun BrowserWorkspaceScreen(
                                 
                                 // Handle internal navigation state syncing
                                 viewModel.updateActiveTabUrl(url, title)
-                            }
+                            },
+                            isAudioShieldActive = { viewModel.isAudioShieldActive.value }
                         )
                         sharedWebView
                     },

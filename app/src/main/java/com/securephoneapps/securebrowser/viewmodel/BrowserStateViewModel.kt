@@ -102,6 +102,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val isBiometricLockEnabled = MutableStateFlow(encryptedPrefs.getBoolean("biometric_lock_enabled", false))
     val pageLoadingProgress = MutableStateFlow(0)
     val isHardwareShutterActive = MutableStateFlow(encryptedPrefs.getBoolean("hardware_shutter_active", true))
+    val isAudioShieldActive = MutableStateFlow(true)
 
     init {
         // Apply persistent proxy settings on boot

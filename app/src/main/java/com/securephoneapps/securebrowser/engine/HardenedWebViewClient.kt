@@ -33,7 +33,8 @@ class HardenedWebViewClient(
     private val onCanvasFaked: () -> Unit,
     private val onFingerprintMocked: (type: String) -> Unit,
     private val onPageStartedCallback: (url: String) -> Unit = {},
-    private val onPageFinishedCallback: (url: String, title: String) -> Unit = { _, _ -> }
+    private val onPageFinishedCallback: (url: String, title: String) -> Unit = { _, _ -> },
+    private val isAudioShieldActive: () -> Boolean = { true }
 ) : WebViewClient() {
 
     private val registeredWebViews = mutableSetOf<Int>()
@@ -242,7 +243,9 @@ class HardenedWebViewClient(
         }
     }
 
-    private val fingerprintInjectionScript: String = """
+    private fun getFingerprintInjectionScript(): String {
+        val audioActive = isAudioShieldActive()
+        return """
         (function() {
             try {
                 // 1. Webdriver masking - clean reCAPTCHA natural override
@@ -286,6 +289,19 @@ class HardenedWebViewClient(
                     };
                 }
 
+                // Canvas blending fillText opacity shift
+                if (window.CanvasRenderingContext2D) {
+                    const orgFillText = CanvasRenderingContext2D.prototype.fillText;
+                    CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
+                        const originalAlpha = this.globalAlpha;
+                        const variance = 0.00001;
+                        this.globalAlpha = Math.max(0, originalAlpha - variance);
+                        const res = orgFillText.apply(this, arguments);
+                        this.globalAlpha = originalAlpha;
+                        return res;
+                    };
+                }
+
 
 
                 // 3. WebGL GPU and Vendor virtualization fakes
@@ -306,19 +322,59 @@ class HardenedWebViewClient(
                 }
 
                 // 4. Audio API protection fakes
-                if (window.AudioBuffer) {
-                    const orgGetChannelData = AudioBuffer.prototype.getChannelData;
-                    AudioBuffer.prototype.getChannelData = function() {
-                        const data = orgGetChannelData.apply(this, arguments);
-                        if (data && data.length > 0) {
-                            // Inject minor sound noise float to distort canvas sound fingerprinters
-                            data[0] = data[0] + 0.00001;
+                if ($audioActive) {
+                    if (window.AudioContext) {
+                        const orgCreateAnalyser = AudioContext.prototype.createAnalyser;
+                        AudioContext.prototype.createAnalyser = function() {
+                            const analyser = orgCreateAnalyser.apply(this, arguments);
+                            try {
+                                const orgGetByteFrequencyData = analyser.getByteFrequencyData;
+                                analyser.getByteFrequencyData = function(array) {
+                                    const res = orgGetByteFrequencyData.apply(this, arguments);
+                                    for (let i = 0; i < array.length; i++) {
+                                        array[i] = Math.max(0, Math.min(255, array[i] + (Math.random() * 2 - 1) * 0.00001));
+                                    }
+                                    return res;
+                                };
+                            } catch (e) {}
+                            return analyser;
+                        };
+                    }
+                    if (window.OfflineAudioContext) {
+                        const orgCreateAnalyser = OfflineAudioContext.prototype.createAnalyser;
+                        if (orgCreateAnalyser) {
+                            OfflineAudioContext.prototype.createAnalyser = function() {
+                                const analyser = orgCreateAnalyser.apply(this, arguments);
+                                try {
+                                    const orgGetByteFrequencyData = analyser.getByteFrequencyData;
+                                    analyser.getByteFrequencyData = function(array) {
+                                        const res = orgGetByteFrequencyData.apply(this, arguments);
+                                        for (let i = 0; i < array.length; i++) {
+                                            array[i] = Math.max(0, Math.min(255, array[i] + (Math.random() * 2 - 1) * 0.00001));
+                                        }
+                                        return res;
+                                    };
+                                } catch (e) {}
+                                return analyser;
+                            };
                         }
-                        if (window.FingerprintShield) {
-                            window.FingerprintShield.onFingerprintMockTriggered("audio");
-                        }
-                        return data;
-                    };
+                    }
+                    if (window.AudioBuffer) {
+                        const orgGetChannelData = AudioBuffer.prototype.getChannelData;
+                        AudioBuffer.prototype.getChannelData = function() {
+                            const data = orgGetChannelData.apply(this, arguments);
+                            if (data && data.length > 0) {
+                                // Inject minor sound noise float to distort canvas sound fingerprinters
+                                for (let i = 0; i < Math.min(data.length, 100); i++) {
+                                    data[i] = data[i] + (Math.random() * 0.00002 - 0.00001);
+                                }
+                            }
+                            if (window.FingerprintShield) {
+                                window.FingerprintShield.onFingerprintMockTriggered("audio");
+                            }
+                            return data;
+                        };
+                    }
                 }
 
                 // 5. Battery profiling isolation
@@ -415,7 +471,8 @@ class HardenedWebViewClient(
                 console.error("Fingerprint shielding exception:", e);
             }
         })();
-    """.trimIndent()
+        """.trimIndent()
+    }
 
     private fun registerDocumentStartScripts(view: WebView) {
         val hash = System.identityHashCode(view)
@@ -423,7 +480,7 @@ class HardenedWebViewClient(
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             try {
-                WebViewCompat.addDocumentStartJavaScript(view, fingerprintInjectionScript, setOf("*"))
+                WebViewCompat.addDocumentStartJavaScript(view, getFingerprintInjectionScript(), setOf("*"))
                 WebViewCompat.addDocumentStartJavaScript(view, shieldsEngine.ampNeutralizerScript, setOf("*"))
                 registeredWebViews.add(hash)
             } catch (e: Exception) {
@@ -474,7 +531,7 @@ class HardenedWebViewClient(
         }
         // Force-inject early scripts as a fallback if synchronous script binding is not supported
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            view?.evaluateJavascript(fingerprintInjectionScript, null)
+            view?.evaluateJavascript(getFingerprintInjectionScript(), null)
             view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
         }
         url?.let {
@@ -487,7 +544,7 @@ class HardenedWebViewClient(
         super.onPageFinished(view, url)
         sweepPreviousOrigin(url)
         // Reinforce injection on completion just in case of iframe or state resets
-        view?.evaluateJavascript(fingerprintInjectionScript, null)
+        view?.evaluateJavascript(getFingerprintInjectionScript(), null)
         view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
         val title = view?.title ?: ""
         url?.let { onPageFinishedCallback(it, title) }
