@@ -103,7 +103,7 @@ class HardenedWebViewClient(
         // High-speed malicious domain analyzer check
         val host = request.url.host ?: ""
         if (isMalicious(host)) {
-            return generateSecurityWarningResponse()
+            return shieldsEngine.generateBlankResponse()
         }
 
         if (shieldsEngine.shouldBlock(url)) {
@@ -230,7 +230,7 @@ class HardenedWebViewClient(
             val uri = android.net.Uri.parse(url)
             val host = uri.host ?: ""
             if (isMalicious(host)) {
-                return generateSecurityWarningResponse()
+                return shieldsEngine.generateBlankResponse()
             }
             if (shieldsEngine.shouldBlock(url)) {
                 onTrackerBlocked(url)

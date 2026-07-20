@@ -2,6 +2,9 @@ package com.securephoneapps.securebrowser
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.os.Build
+import android.app.role.RoleManager
+import androidx.activity.result.contract.ActivityResultContracts
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -171,9 +174,24 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
     }
 
+    private val roleRequestLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            Toast.makeText(this, "Secure Browser is now your default", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // NATIVE BROWSER ROLE REQUEST (Platform Compliance Routine)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
+            if (roleManager.isRoleAvailable(RoleManager.ROLE_BROWSER) && !roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
+                roleRequestLauncher.launch(intent)
+            }
+        }
 
         // CRITICAL CACHE DIRECTORY SYNC: Pre-emptively create Chromium code cache subdirectories
         // This eliminates "No such file or directory" errors in Chromium's file enumerator
