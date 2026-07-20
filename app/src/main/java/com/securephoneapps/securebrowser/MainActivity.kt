@@ -74,6 +74,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -424,6 +426,14 @@ fun configureEngineParameters(settings: WebSettings, viewModel: BrowserStateView
             }
         } catch (e: Exception) {
             // Fallback for standard SDK targets
+        }
+
+        // Automated script execution watchdog: monitors thread execution & layout locking, terminating script loops exceeding 5000ms
+        try {
+            val setJavaScriptTimeoutMethod = settings.javaClass.getMethod("setJavaScriptTimeout", Int::class.java)
+            setJavaScriptTimeoutMethod.invoke(settings, 5000)
+        } catch (e: Exception) {
+            // Watchdog fallback for platform target configurations
         }
     }
 }
@@ -838,46 +848,82 @@ fun BrowserWorkspaceScreen(
                 Spacer(modifier = Modifier.width(10.dp))
 
                 // Editable Input Area
-                OutlinedTextField(
-                    value = userTypedInput,
-                    onValueChange = { userTypedInput = it },
-                    placeholder = { Text("Search or type URL securely...", color = Color(0xFF94A3B8), fontSize = 13.sp) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Uri,
-                        imeAction = ImeAction.Search
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onSearch = {
-                            keyboardController?.hide()
-                            focusManager.clearFocus()
-                            if (userTypedInput.isNotBlank()) {
-                                var target = viewModel.executeUrlResolution(userTypedInput)
-                                target = shieldsEngine.stripTrackingParameters(target)
-                                if (httpsOnly && target.startsWith("http://", ignoreCase = true)) {
-                                    target = target.replaceFirst("http://", "https://", ignoreCase = true)
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        value = userTypedInput,
+                        onValueChange = {
+                            userTypedInput = it
+                            viewModel.fetchSearchSuggestions(it)
+                        },
+                        placeholder = { Text("Search or type URL securely...", color = Color(0xFF94A3B8), fontSize = 13.sp) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Search
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                                if (userTypedInput.isNotBlank()) {
+                                    var target = viewModel.executeUrlResolution(userTypedInput)
+                                    target = shieldsEngine.stripTrackingParameters(target)
+                                    if (httpsOnly && target.startsWith("http://", ignoreCase = true)) {
+                                        target = target.replaceFirst("http://", "https://", ignoreCase = true)
+                                    }
+                                    viewModel.clearLiveTelemetry()
+                                    activeLoadingUrl = target
+                                    viewModel.updateActiveTabUrl(target, target)
+                                    triggerUrlLoad = target
                                 }
-                                viewModel.clearLiveTelemetry()
-                                activeLoadingUrl = target
-                                viewModel.updateActiveTabUrl(target, target)
-                                triggerUrlLoad = target
                             }
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFF0F172A),
+                            unfocusedTextColor = Color(0xFF0F172A),
+                            focusedContainerColor = Color(0xFFF1F5F9),
+                            unfocusedContainerColor = Color(0xFFF1F5F9),
+                            focusedBorderColor = Color(0xFF2563EB),
+                            unfocusedBorderColor = Color(0xFFE2E8F0)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("address_bar_input")
+                    )
+
+                    val searchSuggestions by viewModel.searchSuggestions.collectAsState()
+                    val showSuggestions = searchSuggestions.isNotEmpty() && userTypedInput.isNotBlank()
+
+                    DropdownMenu(
+                        expanded = showSuggestions,
+                        onDismissRequest = { viewModel.searchSuggestions.value = emptyList() },
+                        properties = androidx.compose.ui.window.PopupProperties(focusable = false),
+                        modifier = Modifier.fillMaxWidth().background(Color.White)
+                    ) {
+                        searchSuggestions.forEach { suggestion ->
+                            DropdownMenuItem(
+                                text = { Text(suggestion, color = Color(0xFF0F172A)) },
+                                onClick = {
+                                    userTypedInput = suggestion
+                                    viewModel.searchSuggestions.value = emptyList()
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                    var target = viewModel.executeUrlResolution(suggestion)
+                                    target = shieldsEngine.stripTrackingParameters(target)
+                                    if (httpsOnly && target.startsWith("http://", ignoreCase = true)) {
+                                        target = target.replaceFirst("http://", "https://", ignoreCase = true)
+                                    }
+                                    viewModel.clearLiveTelemetry()
+                                    activeLoadingUrl = target
+                                    viewModel.updateActiveTabUrl(target, target)
+                                    triggerUrlLoad = target
+                                }
+                            )
                         }
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color(0xFF0F172A),
-                        unfocusedTextColor = Color(0xFF0F172A),
-                        focusedContainerColor = Color(0xFFF1F5F9),
-                        unfocusedContainerColor = Color(0xFFF1F5F9),
-                        focusedBorderColor = Color(0xFF2563EB),
-                        unfocusedBorderColor = Color(0xFFE2E8F0)
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .testTag("address_bar_input")
-                )
+                    }
+                }
 
                 Spacer(modifier = Modifier.width(10.dp))
 

@@ -103,6 +103,8 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val pageLoadingProgress = MutableStateFlow(0)
     val isHardwareShutterActive = MutableStateFlow(encryptedPrefs.getBoolean("hardware_shutter_active", true))
     val isAudioShieldActive = MutableStateFlow(true)
+    val searchSuggestions = MutableStateFlow<List<String>>(emptyList())
+    val restrictLocalSubnets = MutableStateFlow(encryptedPrefs.getBoolean("restrict_local_subnets", true))
 
     init {
         // Apply persistent proxy settings on boot
@@ -178,6 +180,42 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             isHardwareShutterActive.value = enabled
             encryptedPrefs.edit().putBoolean("hardware_shutter_active", enabled).apply()
+        }
+    }
+
+    fun toggleRestrictLocalSubnets(enabled: Boolean) {
+        viewModelScope.launch {
+            restrictLocalSubnets.value = enabled
+            encryptedPrefs.edit().putBoolean("restrict_local_subnets", enabled).apply()
+        }
+    }
+
+    fun fetchSearchSuggestions(query: String) {
+        if (query.trim().isEmpty()) {
+            searchSuggestions.value = emptyList()
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = java.net.URL("https://duckduckgo.com/ac/?q=${java.net.URLEncoder.encode(query, "UTF-8")}&type=list")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 3000
+                connection.readTimeout = 3000
+                connection.connect()
+                if (connection.responseCode == 200) {
+                    val text = connection.inputStream.bufferedReader().use { it.readText() }
+                    val regex = Regex("\"([^\"]+)\"")
+                    val matches = regex.findAll(text).map { it.groupValues[1] }.toList()
+                    if (matches.isNotEmpty()) {
+                        searchSuggestions.value = matches.drop(1)
+                    } else {
+                        searchSuggestions.value = emptyList()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -600,7 +638,20 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun executeUrlResolution(input: String): String {
-        return parseUrlOrSearch(input)
+        val resolved = parseUrlOrSearch(input)
+        if (restrictLocalSubnets.value) {
+            val uriHost = try {
+                java.net.URI(resolved).host?.lowercase()
+            } catch (e: Exception) {
+                null
+            }
+            if (uriHost != null) {
+                if (uriHost == "localhost" || uriHost == "127.0.0.1" || uriHost.startsWith("192.168.") || uriHost.startsWith("10.") || uriHost.startsWith("172.16.") || uriHost.startsWith("172.17.") || uriHost.startsWith("172.18.") || uriHost.startsWith("172.19.") || uriHost.startsWith("172.2") || uriHost.startsWith("172.30.") || uriHost.startsWith("172.31.")) {
+                    return "about:blank"
+                }
+            }
+        }
+        return resolved
     }
 
     fun stripTrackingParameters(url: String): String {

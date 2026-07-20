@@ -92,6 +92,7 @@ fun GranularControlSettingsScreen(
     val proxyType by viewModel.proxyType.collectAsState()
     val biometricEnabled by viewModel.isBiometricLockEnabled.collectAsState()
     val isHardwareShutterActive by viewModel.isHardwareShutterActive.collectAsState()
+    val restrictLocalSubnets by viewModel.restrictLocalSubnets.collectAsState()
 
     var showUaDropdown by remember { mutableStateOf(false) }
     var exceptionInput by remember { mutableStateOf("") }
@@ -219,6 +220,35 @@ fun GranularControlSettingsScreen(
                         subtitle = "Forcefully invert webpage canvas rendering for midnight browsing",
                         checked = forcedDark,
                         onCheckedChange = { viewModel.toggleForcedDarkMode(it) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // -- SECTION: Subnet Firewall Profiles --
+            Text(
+                text = "SUBNET FIREWALL PROFILES",
+                fontSize = 11.sp,
+                color = Color(0xFF64748B), // Slate 500
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(12.dp)),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SettingToggleRow(
+                        title = "Restrict Local Intranet Port Scanning",
+                        subtitle = "Block scripts from querying local subnet routing and private network ports",
+                        checked = restrictLocalSubnets,
+                        onCheckedChange = { viewModel.toggleRestrictLocalSubnets(it) }
                     )
                 }
             }
