@@ -95,6 +95,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val proxyHost = MutableStateFlow(encryptedPrefs.getString("proxy_host", "localhost") ?: "localhost")
     val proxyPort = MutableStateFlow(encryptedPrefs.getInt("proxy_port", 9050))
     val proxyType = MutableStateFlow(encryptedPrefs.getString("proxy_type", "SOCKS") ?: "SOCKS")
+    val isBiometricLockEnabled = MutableStateFlow(encryptedPrefs.getBoolean("biometric_lock_enabled", false))
 
     init {
         // Apply persistent proxy settings on boot
@@ -156,6 +157,13 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             selectedDohProvider.value = url
             encryptedPrefs.edit().putString("selected_doh_provider", url).apply()
+        }
+    }
+
+    fun toggleBiometricLock(enabled: Boolean) {
+        viewModelScope.launch {
+            isBiometricLockEnabled.value = enabled
+            encryptedPrefs.edit().putBoolean("biometric_lock_enabled", enabled).apply()
         }
     }
 

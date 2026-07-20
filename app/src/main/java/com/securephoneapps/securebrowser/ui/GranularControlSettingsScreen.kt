@@ -90,6 +90,7 @@ fun GranularControlSettingsScreen(
     val proxyHost by viewModel.proxyHost.collectAsState()
     val proxyPort by viewModel.proxyPort.collectAsState()
     val proxyType by viewModel.proxyType.collectAsState()
+    val biometricEnabled by viewModel.isBiometricLockEnabled.collectAsState()
 
     var showUaDropdown by remember { mutableStateOf(false) }
     var exceptionInput by remember { mutableStateOf("") }
@@ -463,6 +464,35 @@ fun GranularControlSettingsScreen(
                             }
                         }
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // -- SECTION 3.7: Security Access Configuration --
+            Text(
+                text = "SECURITY ACCESS CONFIGURATION",
+                fontSize = 11.sp,
+                color = Color(0xFF64748B),
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(12.dp)),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SettingToggleRow(
+                        title = "Enforce Biometric Application Lock",
+                        subtitle = "Request biometric fingerprint or secure device PIN before launching the browser context.",
+                        checked = biometricEnabled,
+                        onCheckedChange = { viewModel.toggleBiometricLock(it) }
+                    )
                 }
             }
 

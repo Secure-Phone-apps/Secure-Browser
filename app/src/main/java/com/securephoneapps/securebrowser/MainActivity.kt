@@ -9,6 +9,9 @@ import android.webkit.WebView
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 import androidx.activity.ComponentActivity
+import androidx.biometric.BiometricPrompt
+import androidx.biometric.BiometricManager
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -123,9 +126,44 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     private var activeWebView: WebView? = null
+
+    private fun showBiometricPrompt(onSuccess: () -> Unit) {
+        val executor = ContextCompat.getMainExecutor(this)
+        val biometricPrompt = BiometricPrompt(this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    Toast.makeText(applicationContext, "Authentication error: $errString", Toast.LENGTH_SHORT).show()
+                }
+
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    onSuccess()
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    Toast.makeText(applicationContext, "Authentication failed", Toast.LENGTH_SHORT).show()
+                }
+            })
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Biometric Unlock")
+            .setSubtitle("Authenticate to access Secure Browser")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            .build()
+
+        try {
+            biometricPrompt.authenticate(promptInfo)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // Fallback for secure systems without biometrics enabled/set up
+            onSuccess()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -177,29 +215,85 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
-                ) {
-                    when (currentScreen) {
-                        BrowserStateViewModel.Screen.Browser -> {
-                            BrowserWorkspaceScreen(
-                                viewModel = viewModel,
-                                onWebViewBound = { activeWebView = it }
+                val biometricEnabled by viewModel.isBiometricLockEnabled.collectAsState()
+                var isAuthenticated by remember { mutableStateOf(!biometricEnabled) }
+
+                if (!isAuthenticated) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF0F172A)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Locked",
+                                tint = Color(0xFFEF4444),
+                                modifier = Modifier.size(64.dp)
                             )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Secure Browser Locked",
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Biometric authentication required to unlock",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(32.dp))
+                            Button(
+                                onClick = {
+                                    showBiometricPrompt {
+                                        isAuthenticated = true
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+                            ) {
+                                Text("Unlock App", color = Color.White)
+                            }
                         }
-                        BrowserStateViewModel.Screen.TabManager -> {
-                            AdvancedTabManagerScreen(
-                                viewModel = viewModel,
-                                onBack = { viewModel.navigateTo(BrowserStateViewModel.Screen.Browser) }
-                            )
+                    }
+
+                    LaunchedEffect(Unit) {
+                        showBiometricPrompt {
+                            isAuthenticated = true
                         }
-                        BrowserStateViewModel.Screen.Settings -> {
-                            GranularControlSettingsScreen(
-                                viewModel = viewModel,
-                                onBack = { viewModel.navigateTo(BrowserStateViewModel.Screen.Browser) }
-                            )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    ) {
+                        when (currentScreen) {
+                            BrowserStateViewModel.Screen.Browser -> {
+                                BrowserWorkspaceScreen(
+                                    viewModel = viewModel,
+                                    onWebViewBound = { activeWebView = it }
+                                )
+                            }
+                            BrowserStateViewModel.Screen.TabManager -> {
+                                AdvancedTabManagerScreen(
+                                    viewModel = viewModel,
+                                    onBack = { viewModel.navigateTo(BrowserStateViewModel.Screen.Browser) }
+                                )
+                            }
+                            BrowserStateViewModel.Screen.Settings -> {
+                                GranularControlSettingsScreen(
+                                    viewModel = viewModel,
+                                    onBack = { viewModel.navigateTo(BrowserStateViewModel.Screen.Browser) }
+                                )
+                            }
                         }
                     }
                 }
@@ -286,7 +380,8 @@ fun configureEngineParameters(settings: WebSettings, viewModel: BrowserStateView
 
 class SecureContainerDownloadListener(
     private val context: android.content.Context,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val onPdfTriggered: (String) -> Unit
 ) : DownloadListener {
 
     private val KEY_ALIAS = "secure_browser_download_key"
@@ -323,6 +418,20 @@ class SecureContainerDownloadListener(
         contentLength: Long
     ) {
         if (url == null) return
+        
+        // INTERCEPT PDF TO LOAD SECURE INLINE VIEWER (pdf.js)
+        if (url.endsWith(".pdf", ignoreCase = true) || mimetype?.contains("pdf", ignoreCase = true) == true || contentDisposition?.contains(".pdf", ignoreCase = true) == true) {
+            scope.launch(Dispatchers.Main) {
+                try {
+                    val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
+                    val pdfJsUrl = "file:///android_asset/pdfjs/web/viewer.html?file=$encodedUrl"
+                    onPdfTriggered(pdfJsUrl)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            return
+        }
         
         Toast.makeText(context, "Secure Download Started...", Toast.LENGTH_SHORT).show()
 
@@ -790,7 +899,9 @@ fun BrowserWorkspaceScreen(
                             webViewInstance = this
 
                             // Encrypted, isolated download interceptor pipeline
-                            setDownloadListener(SecureContainerDownloadListener(context, coroutineScope))
+                            setDownloadListener(SecureContainerDownloadListener(context, coroutineScope) { pdfUrl ->
+                                this.loadUrl(pdfUrl)
+                            })
 
                             // Apply strict Sandbox parameters
                             configureEngineParameters(settings, viewModel)

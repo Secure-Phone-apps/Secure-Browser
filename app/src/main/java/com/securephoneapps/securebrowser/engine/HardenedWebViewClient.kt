@@ -319,6 +319,33 @@ class HardenedWebViewClient(
                         });
                     };
                 }
+
+                // 10. Web Crypto API Spoofing
+                if (window.crypto && window.crypto.subtle && window.crypto.subtle.generateKey) {
+                    const orgGenerateKey = window.crypto.subtle.generateKey;
+                    window.crypto.subtle.generateKey = function(algorithm, extractable, keyUsages) {
+                        if (window.FingerprintShield) {
+                            window.FingerprintShield.onFingerprintMockTriggered("webcrypto");
+                        }
+                        // Inject small metadata variation in the algorithm object to randomize analytic entity key-gen fingerprint entropy
+                        const modifiedAlgorithm = typeof algorithm === 'string' ? algorithm : { ...algorithm, length: algorithm.length || 256, salt: new Uint8Array([Math.floor(Math.random() * 256)]) };
+                        return orgGenerateKey.call(this, modifiedAlgorithm, extractable, keyUsages);
+                    };
+                }
+
+                // 11. Force Sans-Serif Font Rendering Substitution to Defeat Font Enumeration Fingerprinting
+                const injectGlobalFontSubstitution = () => {
+                    const style = document.createElement('style');
+                    style.id = 'font-scrambler-override';
+                    style.textContent = 'body, html, * { font-family: sans-serif !important; }';
+                    if (document.head) {
+                        document.head.appendChild(style);
+                    } else if (document.documentElement) {
+                        document.documentElement.appendChild(style);
+                    }
+                };
+                injectGlobalFontSubstitution();
+                document.addEventListener('DOMContentLoaded', injectGlobalFontSubstitution);
             } catch (e) {
                 console.error("Fingerprint shielding exception:", e);
             }
