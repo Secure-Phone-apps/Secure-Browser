@@ -577,15 +577,16 @@ fun BrowserWorkspaceScreen(
             .navigationBarsPadding(),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            // -- HIGH-PERFORMANCE TOP ADDRESS BAR --
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White)
-                    .border(width = 1.dp, color = Color(0xFFE2E8F0))
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Column {
+                // -- HIGH-PERFORMANCE TOP ADDRESS BAR --
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White)
+                        .border(width = 1.dp, color = Color(0xFFE2E8F0))
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                 // SSL Lock indicator
                 val lockIcon = if (sslSecured) Icons.Default.Lock else Icons.Default.LockOpen
                 val lockColor = if (sslSecured) Color(0xFF059669) else Color(0xFFFF453A) // Emerald Green vs Red
@@ -690,7 +691,19 @@ fun BrowserWorkspaceScreen(
                     }
                 }
             }
-        },
+
+            // Sleek horizontal progress bar linked dynamically to page progress, hiding when reached 100
+            val progress by viewModel.pageLoadingProgress.collectAsState()
+            if (progress > 0 && progress < 100) {
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = progress / 100f,
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                    color = Color(0xFF2563EB),
+                    trackColor = Color(0xFFE2E8F0)
+                )
+            }
+        }
+    },
         bottomBar = {
             // -- CORE BOTTOM NAVIGATION PANEL --
             Row(
@@ -978,6 +991,27 @@ fun BrowserWorkspaceScreen(
                                 override fun onReceivedIcon(view: WebView?, icon: android.graphics.Bitmap?) {
                                     super.onReceivedIcon(view, icon)
                                     // Could potentially extract dominant color from icon here if theme-color meta is missing
+                                }
+
+                                override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
+                                    val isShutterEnabled = viewModel.isHardwareShutterActive.value
+                                    if (isShutterEnabled && request != null) {
+                                        val resources = request.resources
+                                        val hasCameraOrMic = resources.any { res ->
+                                            res == android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE ||
+                                            res == android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                                        }
+                                        if (hasCameraOrMic) {
+                                            request.deny()
+                                            return
+                                        }
+                                    }
+                                    super.onPermissionRequest(request)
+                                }
+
+                                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                    super.onProgressChanged(view, newProgress)
+                                    viewModel.pageLoadingProgress.value = newProgress
                                 }
                             }
                         }

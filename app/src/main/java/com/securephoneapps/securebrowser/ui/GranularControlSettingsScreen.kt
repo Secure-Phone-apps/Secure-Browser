@@ -91,6 +91,7 @@ fun GranularControlSettingsScreen(
     val proxyPort by viewModel.proxyPort.collectAsState()
     val proxyType by viewModel.proxyType.collectAsState()
     val biometricEnabled by viewModel.isBiometricLockEnabled.collectAsState()
+    val isHardwareShutterActive by viewModel.isHardwareShutterActive.collectAsState()
 
     var showUaDropdown by remember { mutableStateOf(false) }
     var exceptionInput by remember { mutableStateOf("") }
@@ -492,6 +493,35 @@ fun GranularControlSettingsScreen(
                         subtitle = "Request biometric fingerprint or secure device PIN before launching the browser context.",
                         checked = biometricEnabled,
                         onCheckedChange = { viewModel.toggleBiometricLock(it) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // -- SECTION 3.8: Hardware Peripheral Firewalls --
+            Text(
+                text = "HARDWARE PERIPHERAL FIREWALLS",
+                fontSize = 11.sp,
+                color = Color(0xFF64748B),
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(12.dp)),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SettingToggleRow(
+                        title = "Enforce Camera & Microphone Hard Shutter",
+                        subtitle = "Forcefully intercept and block all web configurations requesting access to camera and microphone hardware.",
+                        checked = isHardwareShutterActive,
+                        onCheckedChange = { viewModel.toggleHardwareShutter(it) }
                     )
                 }
             }

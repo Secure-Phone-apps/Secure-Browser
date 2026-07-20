@@ -96,6 +96,8 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val proxyPort = MutableStateFlow(encryptedPrefs.getInt("proxy_port", 9050))
     val proxyType = MutableStateFlow(encryptedPrefs.getString("proxy_type", "SOCKS") ?: "SOCKS")
     val isBiometricLockEnabled = MutableStateFlow(encryptedPrefs.getBoolean("biometric_lock_enabled", false))
+    val pageLoadingProgress = MutableStateFlow(0)
+    val isHardwareShutterActive = MutableStateFlow(encryptedPrefs.getBoolean("hardware_shutter_active", true))
 
     init {
         // Apply persistent proxy settings on boot
@@ -164,6 +166,27 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             isBiometricLockEnabled.value = enabled
             encryptedPrefs.edit().putBoolean("biometric_lock_enabled", enabled).apply()
+        }
+    }
+
+    fun toggleHardwareShutter(enabled: Boolean) {
+        viewModelScope.launch {
+            isHardwareShutterActive.value = enabled
+            encryptedPrefs.edit().putBoolean("hardware_shutter_active", enabled).apply()
+        }
+    }
+
+    fun saveCurrentPageArchive(webView: WebView, context: Context) {
+        viewModelScope.launch {
+            try {
+                val randomName = "offline_archive_${UUID.randomUUID()}.mht"
+                val file = java.io.File(context.filesDir, randomName)
+                withContext(Dispatchers.Main) {
+                    webView.saveWebArchive(file.absolutePath)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
