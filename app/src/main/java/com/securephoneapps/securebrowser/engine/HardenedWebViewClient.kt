@@ -369,6 +369,24 @@ class HardenedWebViewClient(
                         return orgGetParameter.apply(this, arguments);
                     };
                 }
+                const hookWebGLGetExtension = (proto) => {
+                    if (proto && proto.getExtension) {
+                        const orgGetExtension = proto.getExtension;
+                        proto.getExtension = function(name) {
+                            if (name && (name.indexOf('WEBGL_debug_renderer_info') !== -1 || name.toLowerCase().indexOf('renderer_info') !== -1)) {
+                                if (window.FingerprintShield) window.FingerprintShield.onFingerprintMockTriggered("webgl_extension_blocked");
+                                return null;
+                            }
+                            return orgGetExtension.apply(this, arguments);
+                        };
+                    }
+                };
+                if (window.WebGLRenderingContext) {
+                    hookWebGLGetExtension(WebGLRenderingContext.prototype);
+                }
+                if (window.WebGL2RenderingContext) {
+                    hookWebGLGetExtension(WebGL2RenderingContext.prototype);
+                }
 
                 // 4. Audio API protection fakes
                 if ($audioActive) {

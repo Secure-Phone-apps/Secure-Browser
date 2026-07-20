@@ -529,8 +529,49 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                 webView.clearHistory()
                 webView.removeAllViews()
                 webView.destroy()
+
+                // Spawn a low-priority thread to execute GC
+                viewModelScope.launch(Dispatchers.Default) {
+                    try {
+                        System.gc()
+                        System.runFinalization()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+    }
+
+    fun flushDnsResolutionCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val inetAddressClass = java.net.InetAddress::class.java
+                val addressCacheField = inetAddressClass.getDeclaredField("addressCache")
+                addressCacheField.isAccessible = true
+                val addressCache = addressCacheField.get(null)
+                if (addressCache != null) {
+                    val cacheField = addressCache.javaClass.getDeclaredField("cache")
+                    cacheField.isAccessible = true
+                    val cacheMap = cacheField.get(addressCache) as? MutableMap<*, *>
+                    if (cacheMap != null) {
+                        synchronized(cacheMap) {
+                            cacheMap.clear()
+                        }
+                    }
+                    try {
+                        val clearMethod = addressCache.javaClass.getDeclaredMethod("clear")
+                        clearMethod.isAccessible = true
+                        clearMethod.invoke(addressCache)
+                    } catch (e: Exception) {}
+                }
+            } catch (e: Exception) {
+                try {
+                    java.security.Security.setProperty("networkaddress.cache.ttl", "0")
+                    java.security.Security.setProperty("networkaddress.cache.negative.ttl", "0")
+                } catch (ex: Exception) {}
             }
         }
     }
