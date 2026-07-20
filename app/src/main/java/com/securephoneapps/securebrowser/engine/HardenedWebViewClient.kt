@@ -227,26 +227,22 @@ class HardenedWebViewClient(
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val url = request?.url?.toString() ?: return false
-        if (url.contains("viewer.html", ignoreCase = true) || url.contains("pdfjs", ignoreCase = true)) {
-            if (!url.startsWith("file:///android_asset/pdfjs/")) {
-                return true // cancel load
-            }
-        }
         if (url.startsWith("http://") || url.startsWith("https://")) {
             return false
         }
-        if (url.startsWith("mailto:") || url.startsWith("tel:") || url.startsWith("sms:") || url.startsWith("intent:")) {
+        if (url.startsWith("mailto:") || url.startsWith("tel:") || url.startsWith("sms:") || url.startsWith("whatsapp:") || url.startsWith("intent:")) {
             try {
-                val context = view?.context ?: return false
+                val context = view?.context ?: return true
                 val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(intent)
                 return true
             } catch (e: Exception) {
                 e.printStackTrace()
+                return true
             }
         }
-        return super.shouldOverrideUrlLoading(view, request)
+        return true
     }
 
     private fun isMalicious(host: String): Boolean {

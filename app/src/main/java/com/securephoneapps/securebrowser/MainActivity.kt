@@ -383,7 +383,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
 fun configureEngineParameters(settings: WebSettings, viewModel: BrowserStateViewModel? = null) {
     settings.apply {
-        val currentUA = viewModel?.selectedUserAgent?.value ?: com.securephoneapps.securebrowser.engine.ShieldsCoreEngine().getRandomizedUserAgent()
+        val currentUA = viewModel?.selectedUserAgent?.value ?: "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.165 Mobile Safari/537.36"
         userAgentString = currentUA
         
         // FORCED WEB LAYOUT DARK MODE (Vivaldi Style)
@@ -659,11 +659,7 @@ fun BrowserWorkspaceScreen(
             // Apply strict Sandbox parameters
             configureEngineParameters(settings, viewModel)
             settings.javaScriptEnabled = jsEnabled
-            settings.userAgentString = if (selectedUa.contains("Mozilla/5.0 (Linux; Android 10; K)") || selectedUa.isBlank()) {
-                shieldsEngine.getRandomizedUserAgent()
-            } else {
-                selectedUa
-            }
+            settings.userAgentString = selectedUa.ifBlank { viewModel?.selectedUserAgent?.value ?: shieldsEngine.getRandomizedUserAgent() }
 
             // Block third-party cookies if toggled
             val cookieManager = CookieManager.getInstance()
@@ -751,11 +747,7 @@ fun BrowserWorkspaceScreen(
     }
 
     LaunchedEffect(selectedUa) {
-        sharedWebView.settings.userAgentString = if (selectedUa.contains("Mozilla/5.0 (Linux; Android 10; K)") || selectedUa.isBlank()) {
-            shieldsEngine.getRandomizedUserAgent()
-        } else {
-            selectedUa
-        }
+        sharedWebView.settings.userAgentString = selectedUa.ifBlank { viewModel.selectedUserAgent.value }
     }
 
     LaunchedEffect(blockThirdPartyCookies) {

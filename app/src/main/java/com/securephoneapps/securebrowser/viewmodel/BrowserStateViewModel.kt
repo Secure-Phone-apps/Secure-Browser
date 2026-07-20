@@ -380,6 +380,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     private suspend fun createDefaultTab() {
+        cycleActiveUserAgent()
         val tab = TabInstance(
             tabId = UUID.randomUUID().toString(),
             currentUrl = "about:blank",
@@ -541,6 +542,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
 
     fun createNewTab(url: String = "about:blank", isIncognito: Boolean = false) {
         viewModelScope.launch {
+            cycleActiveUserAgent()
             enforceTabLimit()
             val tab = TabInstance(
                 tabId = UUID.randomUUID().toString(),
@@ -557,6 +559,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
 
     fun createNewTabInGroup(url: String, isIncognito: Boolean = false) {
         viewModelScope.launch {
+            cycleActiveUserAgent()
             enforceTabLimit()
             val groupId = UUID.randomUUID().toString()
             val colorHex = "#0A84FF" // Default secure blue badge for link-created group
@@ -900,6 +903,20 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     fun updateUserAgent(ua: String) {
         encryptedPrefs.edit().putString("custom_user_agent", ua).apply()
         selectedUserAgent.value = ua
+    }
+
+    val mobileUserAgents = listOf(
+        "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.165 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 14; Samsung Browser; Model) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Android 14; Mobile; rv:127.0) Gecko/127.0 Firefox/127.0",
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.179 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 EdgA/125.0.2535.92"
+    )
+
+    fun cycleActiveUserAgent(): String {
+        val nextUa = mobileUserAgents.random()
+        updateUserAgent(nextUa)
+        return nextUa
     }
 
     // Bookmarks and History DB ops
