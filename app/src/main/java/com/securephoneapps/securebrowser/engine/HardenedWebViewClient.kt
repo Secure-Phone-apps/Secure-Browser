@@ -116,6 +116,36 @@ class HardenedWebViewClient(
                 }
                 requestHeaders["Referer"] = "no-referrer"
 
+                // Synchronize User-Agent Client Hints to prevent fingerprint mismatches
+                val userAgent = view?.settings?.userAgentString ?: ""
+                if (userAgent.isNotEmpty()) {
+                    val isMobile = if (userAgent.contains("Mobile", ignoreCase = true) || userAgent.contains("Android", ignoreCase = true) || userAgent.contains("iPhone", ignoreCase = true)) "?1" else "?0"
+                    val platform = when {
+                        userAgent.contains("Android", ignoreCase = true) -> "\"Android\""
+                        userAgent.contains("iPhone", ignoreCase = true) || userAgent.contains("iPad", ignoreCase = true) -> "\"iOS\""
+                        userAgent.contains("Windows", ignoreCase = true) -> "\"Windows\""
+                        userAgent.contains("Macintosh", ignoreCase = true) -> "\"macOS\""
+                        userAgent.contains("Linux", ignoreCase = true) -> "\"Linux\""
+                        else -> "\"Android\""
+                    }
+                    val chromeVersionRegex = "Chrome/([0-9.]+)".toRegex()
+                    val chromeMatch = chromeVersionRegex.find(userAgent)
+                    val chromeVersion = chromeMatch?.groupValues?.get(1)?.split(".")?.firstOrNull() ?: "120"
+                    val secChUa = "\"Not A(Brand\";v=\"99\", \"Chromium\";v=\"$chromeVersion\", \"Google Chrome\";v=\"$chromeVersion\""
+                    
+                    val keysToRemove = requestHeaders.keys.filter { 
+                        it.equals("Sec-CH-UA", ignoreCase = true) || 
+                        it.equals("Sec-CH-UA-Mobile", ignoreCase = true) || 
+                        it.equals("Sec-CH-UA-Platform", ignoreCase = true) 
+                    }
+                    for (key in keysToRemove) {
+                        requestHeaders.remove(key)
+                    }
+                    requestHeaders["Sec-CH-UA"] = secChUa
+                    requestHeaders["Sec-CH-UA-Mobile"] = isMobile
+                    requestHeaders["Sec-CH-UA-Platform"] = platform
+                }
+
                 val connectionUrl = java.net.URL(url)
                 val connection = connectionUrl.openConnection() as java.net.HttpURLConnection
                 connection.requestMethod = request.method

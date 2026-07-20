@@ -370,6 +370,53 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun generateQrBackupPayload(): String {
+        val data = exportBookmarksToEncryptedJson(context)
+        val cleanData = if (data.isEmpty()) "[]" else data
+        val base64 = android.util.Base64.encodeToString(cleanData.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+        return "SECURE_SYNC_QR:$base64"
+    }
+
+    val readerModeExtractorScript: String = """
+        (function() {
+            try {
+                var title = document.title || 'Untitled';
+                var articleText = '';
+                var articleElement = document.querySelector('article') || document.querySelector('[role="article"]');
+                if (articleElement) {
+                    var headings = articleElement.querySelectorAll('h1, h2, h3, h4, h5, h6');
+                    var paragraphs = articleElement.querySelectorAll('p');
+                    headings.forEach(function(h) { articleText += '<h2>' + h.innerText + '</h2>'; });
+                    paragraphs.forEach(function(p) { articleText += '<p>' + p.innerText + '</p>'; });
+                } else {
+                    var bodyParagraphs = document.querySelectorAll('p');
+                    bodyParagraphs.forEach(function(p) {
+                        var parent = p.parentElement;
+                        var parentId = parent ? (parent.id || '').toLowerCase() : '';
+                        var parentClass = parent ? (parent.className || '').toLowerCase() : '';
+                        if (parentId.indexOf('footer') === -1 && parentId.indexOf('nav') === -1 && parentId.indexOf('sidebar') === -1 && parentId.indexOf('menu') === -1 &&
+                            parentClass.indexOf('footer') === -1 && parentClass.indexOf('nav') === -1 && parentClass.indexOf('sidebar') === -1 && parentClass.indexOf('menu') === -1) {
+                            articleText += '<p>' + p.innerText + '</p>';
+                        }
+                    });
+                }
+                if (!articleText.trim()) {
+                    articleText = '<p>No readable article content found on this page.</p>';
+                }
+                var rawHtml = '<html><head><meta charset="utf-8"><title>' + title + '</title>' +
+                    '<style>' +
+                    'body { background-color: #0F172A; color: #E2E8F0; font-family: sans-serif; line-height: 1.6; padding: 24px; max-width: 650px; margin: 0 auto; }' +
+                    'h1, h2 { color: #38BDF8; margin-top: 1.5em; }' +
+                    'p { margin-bottom: 1.2em; font-size: 16px; }' +
+                    '</style></head>' +
+                    '<body><h1>' + title + '</h1>' + articleText + '</body></html>';
+                return rawHtml;
+            } catch (e) {
+                return '<html><body><p>Error extracting content: ' + e.message + '</p></body></html>';
+            }
+        })();
+    """.trimIndent()
+
     // Tab Operations
     private suspend fun enforceTabLimit() {
         val currentTabs = _tabsState.value

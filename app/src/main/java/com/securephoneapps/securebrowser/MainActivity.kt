@@ -972,6 +972,33 @@ fun BrowserWorkspaceScreen(
                         Icon(imageVector = Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF475569))
                     }
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                IconButton(
+                    onClick = {
+                        sharedWebView.evaluateJavascript(viewModel.readerModeExtractorScript) { result ->
+                            if (result != null && result != "null" && result.length > 2) {
+                                var html = result
+                                if (html.startsWith("\"") && html.endsWith("\"")) {
+                                    html = html.substring(1, html.length - 1)
+                                }
+                                html = html.replace("\\\"", "\"")
+                                    .replace("\\u003C", "<")
+                                    .replace("\\u003E", ">")
+                                    .replace("\\u0026", "&")
+                                    .replace("\\\\", "\\")
+                                    .replace("\\n", "\n")
+                                    .replace("\\r", "")
+                                
+                                sharedWebView.loadDataWithBaseURL(sharedWebView.url ?: "https://reader.local", html, "text/html", "UTF-8", null)
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Public, contentDescription = "Reader Mode", tint = Color(0xFF2563EB))
+                }
             }
 
             // Ensure the linear Jetpack Compose progress indicator bar only recomposes when progress is between 1 and 99, and completely sets visibility to gone when it reaches 100 to save rendering cycles.

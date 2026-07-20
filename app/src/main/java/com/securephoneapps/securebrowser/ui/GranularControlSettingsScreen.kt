@@ -350,6 +350,128 @@ fun GranularControlSettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // -- SECTION: Decentralized Profile Sync --
+            Text(
+                text = "DECENTRALIZED PROFILE SYNC",
+                fontSize = 11.sp,
+                color = Color(0xFF64748B),
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(12.dp)),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    var showQrDialog by remember { mutableStateOf(false) }
+                    var syncPayload by remember { mutableStateOf("") }
+
+                    if (showQrDialog) {
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = { showQrDialog = false },
+                            title = { Text("Sync QR Code Profile") },
+                            text = {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "Scan this profile from another device to sync your bookmarks securely.",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF64748B),
+                                        modifier = Modifier.padding(bottom = 16.dp)
+                                    )
+                                    // Visual QR Placeholder rendering surface
+                                    Box(
+                                        modifier = Modifier
+                                            .size(200.dp)
+                                            .background(Color.White, shape = RoundedCornerShape(8.dp))
+                                            .border(2.dp, Color(0xFF2563EB), shape = RoundedCornerShape(8.dp))
+                                            .padding(16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(
+                                                imageVector = Icons.Default.Security,
+                                                contentDescription = "Sync Icon",
+                                                tint = Color(0xFF1E293B),
+                                                modifier = Modifier.size(64.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "Sync Token Active",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF2563EB)
+                                            )
+                                            Text(
+                                                text = if (syncPayload.length > 20) syncPayload.take(15) + "..." else syncPayload,
+                                                fontSize = 9.sp,
+                                                color = Color(0xFF64748B)
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                Button(onClick = { showQrDialog = false }) {
+                                    Text("Dismiss")
+                                }
+                            }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                syncPayload = viewModel.generateQrBackupPayload()
+                                showQrDialog = true
+                            }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = "Sync QR Code",
+                            tint = Color(0xFF2563EB)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Decentralized Sync Protocol",
+                                color = Color(0xFF0F172A),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Securely mirror encrypted bookmarks to alternate isolated runtimes via scan matrix",
+                                color = Color(0xFF64748B),
+                                fontSize = 11.sp
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                syncPayload = viewModel.generateQrBackupPayload()
+                                showQrDialog = true
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F9), contentColor = Color(0xFF2563EB)),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Text("Generate Sync QR Code", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // -- SECTION 3.6: Advanced Network Routing --
             Text(
                 text = "ADVANCED NETWORK ROUTING",
