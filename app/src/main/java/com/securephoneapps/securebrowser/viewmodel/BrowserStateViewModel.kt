@@ -36,21 +36,11 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
 
     private val context = application.applicationContext
     private val database = SecureBrowserDatabase.getInstance(context)
-    private val repository = BrowserRepository(database)
+    private val repository = com.securephoneapps.securebrowser.repository.BrowserRepository(database)
+    private val settingsRepository = com.securephoneapps.securebrowser.repository.SettingsRepository(context)
+    private val navigationManager = com.securephoneapps.securebrowser.manager.NavigationManager()
+    private val tabManager = com.securephoneapps.securebrowser.manager.TabManager()
     private val databaseMutex = Mutex()
-
-    init {
-        companionContext = context
-    }
-
-    private val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-    private val encryptedPrefs = EncryptedSharedPreferences.create(
-        "secure_browser_settings",
-        masterKeyAlias,
-        context,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
 
     // Reactive Streams from Database
     val history: StateFlow<List<HistoryItem>> = repository.allHistory
@@ -71,44 +61,42 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     private val _activeTabId = MutableStateFlow<String?>(null)
     val activeTabId: StateFlow<String?> = _activeTabId.asStateFlow()
 
-    enum class Screen { Browser, TabManager, Settings, Downloads }
-    private val _currentScreen = MutableStateFlow(Screen.Browser)
-    val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
+    val currentScreen = navigationManager.currentScreen
 
     // Configuration Settings
-    val javascriptEnabled = MutableStateFlow(encryptedPrefs.getBoolean("javascript_enabled", true))
-    val blockThirdPartyCookies = MutableStateFlow(encryptedPrefs.getBoolean("block_third_party_cookies", true))
-    val webRtcPrivacyEnabled = MutableStateFlow(encryptedPrefs.getBoolean("webrtc_privacy_enabled", true))
-    val deGooglingTelemetryEnabled = MutableStateFlow(encryptedPrefs.getBoolean("de_googling_telemetry_enabled", true))
-    val httpsOnlyMode = MutableStateFlow(encryptedPrefs.getBoolean("https_only_mode", true))
-    val clearOnExitEnabled = MutableStateFlow(encryptedPrefs.getBoolean("clear_on_exit_enabled", false))
-    val stripTrackingEnabled = MutableStateFlow(encryptedPrefs.getBoolean("strip_tracking_enabled", true))
-    val deAMPEnabled = MutableStateFlow(encryptedPrefs.getBoolean("deamp_enabled", true))
-    val searchEngine = MutableStateFlow(encryptedPrefs.getString("search_engine", "DuckDuckGo") ?: "DuckDuckGo")
-    val customSearchEngineUrl = MutableStateFlow(encryptedPrefs.getString("custom_search_engine_url", "https://duckduckgo.com/?q=") ?: "https://duckduckgo.com/?q=")
+    val javascriptEnabled = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_JS_ENABLED, true))
+    val blockThirdPartyCookies = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_BLOCK_THIRD_PARTY_COOKIES, true))
+    val webRtcPrivacyEnabled = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_WEB_RTC_PRIVACY, true))
+    val deGooglingTelemetryEnabled = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_DE_GOOGLING, true))
+    val httpsOnlyMode = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_HTTPS_ONLY, true))
+    val clearOnExitEnabled = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_CLEAR_ON_EXIT, false))
+    val stripTrackingEnabled = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_STRIP_TRACKING, true))
+    val deAMPEnabled = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_DE_AMP, true))
+    val searchEngine = MutableStateFlow(settingsRepository.getString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_SEARCH_ENGINE, "DuckDuckGo"))
+    val customSearchEngineUrl = MutableStateFlow(settingsRepository.getString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_CUSTOM_SEARCH_URL, "https://duckduckgo.com/?q="))
     val liveBlockedDomains = MutableStateFlow<List<String>>(emptyList())
     val liveBlockedDomainsLog = MutableStateFlow<List<String>>(emptyList())
-    val forcedDarkModeEnabled = MutableStateFlow(encryptedPrefs.getBoolean("forced_dark_mode_enabled", true))
-    val appTheme = MutableStateFlow(encryptedPrefs.getString("app_theme", "Dark") ?: "Dark")
-    val themeColor = MutableStateFlow(encryptedPrefs.getString("theme_color", "Blue") ?: "Blue")
+    val forcedDarkModeEnabled = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_FORCE_DARK_MODE, true))
+    val appTheme = MutableStateFlow(settingsRepository.getString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_APP_THEME, "Dark"))
+    val themeColor = MutableStateFlow(settingsRepository.getString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_THEME_COLOR, "Blue"))
     val activePageThemeColor = MutableStateFlow<String?>(null)
     val selectedUserAgent = MutableStateFlow(
-        encryptedPrefs.getString("custom_user_agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36") ?: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+        settingsRepository.getString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_CUSTOM_USER_AGENT, "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
     )
-    val selectedDohProvider = MutableStateFlow(encryptedPrefs.getString("selected_doh_provider", "https://cloudflare-dns.com") ?: "https://cloudflare-dns.com")
-    val proxyEnabled = MutableStateFlow(encryptedPrefs.getBoolean("proxy_enabled", false))
-    val proxyHost = MutableStateFlow(encryptedPrefs.getString("proxy_host", "localhost") ?: "localhost")
-    val proxyPort = MutableStateFlow(encryptedPrefs.getInt("proxy_port", 9050))
-    val proxyType = MutableStateFlow(encryptedPrefs.getString("proxy_type", "SOCKS") ?: "SOCKS")
+    val selectedDohProvider = MutableStateFlow(settingsRepository.getString("selected_doh_provider", "https://cloudflare-dns.com"))
+    val proxyEnabled = MutableStateFlow(settingsRepository.getBoolean("proxy_enabled", false))
+    val proxyHost = MutableStateFlow(settingsRepository.getString("proxy_host", "localhost"))
+    val proxyPort = MutableStateFlow(settingsRepository.getInt("proxy_port", 9050))
+    val proxyType = MutableStateFlow(settingsRepository.getString("proxy_type", "SOCKS"))
     val downloadedFilesList = MutableStateFlow<List<File>>(emptyList())
     val isAudioShieldActive = MutableStateFlow(true)
-    val restrictLocalSubnets = MutableStateFlow(encryptedPrefs.getBoolean("restrict_local_subnets", true))
+    val restrictLocalSubnets = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_STRICT_LOCAL_RESTRICTION, true))
     val userScriptsList = MutableStateFlow<List<Pair<String, String>>>(emptyList())
     val proxyDiagnosticState = MutableStateFlow("")
     val searchSuggestions = MutableStateFlow<List<String>>(emptyList())
-    val isHardwareShutterActive = MutableStateFlow(encryptedPrefs.getBoolean("hardware_shutter_active", true))
-    val isBiometricLockEnabled = MutableStateFlow(encryptedPrefs.getBoolean("biometric_lock_enabled", false))
-    val isAuthenticated = MutableStateFlow(!encryptedPrefs.getBoolean("biometric_lock_enabled", false))
+    val isHardwareShutterActive = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_HARDWARE_SHUTTER, true))
+    val isBiometricLockEnabled = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_BIOMETRIC_LOCK, false))
+    val isAuthenticated = MutableStateFlow(!settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_BIOMETRIC_LOCK, false))
     val pageLoadingProgress = MutableStateFlow(0)
     val canGoBack = MutableStateFlow(false)
     val canGoForward = MutableStateFlow(false)
@@ -132,7 +120,9 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun navigateTo(screen: Screen) { _currentScreen.value = screen }
+    fun navigateTo(screen: com.securephoneapps.securebrowser.manager.NavigationManager.Screen) { navigationManager.navigateTo(screen) }
+
+    fun goBack(): Boolean = navigationManager.goBack()
 
     fun refreshDownloadedFiles(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -196,32 +186,33 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
 
     fun toggleForcedDarkMode(enabled: Boolean) {
         forcedDarkModeEnabled.value = enabled
-        encryptedPrefs.edit().putBoolean("forced_dark_mode_enabled", enabled).apply()
+        settingsRepository.setBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_FORCE_DARK_MODE, enabled)
     }
+
 
     fun updateDohProvider(url: String) {
         selectedDohProvider.value = url
-        encryptedPrefs.edit().putString("selected_doh_provider", url).apply()
+        settingsRepository.setString("selected_doh_provider", url)
     }
 
     fun updateUserAgent(ua: String) {
         selectedUserAgent.value = ua
-        encryptedPrefs.edit().putString("custom_user_agent", ua).apply()
+        settingsRepository.setString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_CUSTOM_USER_AGENT, ua)
     }
 
     fun toggleBiometricLock(enabled: Boolean) {
         isBiometricLockEnabled.value = enabled
-        encryptedPrefs.edit().putBoolean("biometric_lock_enabled", enabled).apply()
+        settingsRepository.setBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_BIOMETRIC_LOCK, enabled)
     }
 
     fun toggleHardwareShutter(enabled: Boolean) {
         isHardwareShutterActive.value = enabled
-        encryptedPrefs.edit().putBoolean("hardware_shutter_active", enabled).apply()
+        settingsRepository.setBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_HARDWARE_SHUTTER, enabled)
     }
 
     fun toggleRestrictLocalSubnets(enabled: Boolean) {
         restrictLocalSubnets.value = enabled
-        encryptedPrefs.edit().putBoolean("restrict_local_subnets", enabled).apply()
+        settingsRepository.setBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_STRICT_LOCAL_RESTRICTION, enabled)
     }
 
     fun setBrowserProxy(host: String, port: Int, type: String, enabled: Boolean) {
@@ -229,12 +220,11 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         proxyPort.value = port
         proxyType.value = type
         proxyEnabled.value = enabled
-        encryptedPrefs.edit().apply {
-            putString("proxy_host", host)
-            putInt("proxy_port", port)
-            putString("proxy_type", type)
-            putBoolean("proxy_enabled", enabled)
-        }.apply()
+        
+        settingsRepository.setString("proxy_host", host)
+        settingsRepository.setInt("proxy_port", port)
+        settingsRepository.setString("proxy_type", type)
+        settingsRepository.setBoolean("proxy_enabled", enabled)
     }
 
     private var searchJob: kotlinx.coroutines.Job? = null
@@ -351,14 +341,14 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             val tab = TabInstance(tabId = UUID.randomUUID().toString(), currentUrl = url, pageTitle = "New Tab", lastActiveTimestamp = System.currentTimeMillis(), isIncognito = isIncognito)
             repository.insertTab(tab)
             _activeTabId.value = tab.tabId
-            _currentScreen.value = Screen.Browser
+            navigationManager.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Browser)
         }
     }
 
     fun selectTab(tabId: String) {
         _activeTabId.value = tabId
         _activeTabUrl.value = _tabsState.value.find { it.tabId == tabId }?.currentUrl ?: ""
-        _currentScreen.value = Screen.Browser
+        navigationManager.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Browser)
     }
 
     fun closeTab(tabId: String) {
@@ -395,16 +385,22 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun toggleSetting(key: String, value: Boolean) {
-        encryptedPrefs.edit().putBoolean(key, value).apply()
+        settingsRepository.setBoolean(key, value)
         when (key) {
-            "javascript_enabled" -> javascriptEnabled.value = value
-            "block_third_party_cookies" -> blockThirdPartyCookies.value = value
-            "webrtc_privacy_enabled" -> webRtcPrivacyEnabled.value = value
-            "de_googling_telemetry_enabled" -> deGooglingTelemetryEnabled.value = value
-            "https_only_mode" -> httpsOnlyMode.value = value
-            "clear_on_exit_enabled" -> clearOnExitEnabled.value = value
-            "strip_tracking_enabled" -> stripTrackingEnabled.value = value
-            "deamp_enabled" -> deAMPEnabled.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_JS_ENABLED -> javascriptEnabled.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_BLOCK_THIRD_PARTY_COOKIES -> blockThirdPartyCookies.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_WEB_RTC_PRIVACY -> webRtcPrivacyEnabled.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_DE_GOOGLING -> deGooglingTelemetryEnabled.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_HTTPS_ONLY -> httpsOnlyMode.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_CLEAR_ON_EXIT -> clearOnExitEnabled.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_STRIP_TRACKING -> stripTrackingEnabled.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_DE_AMP -> deAMPEnabled.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_FORCE_DARK_MODE -> forcedDarkModeEnabled.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_HARDWARE_SHUTTER -> isHardwareShutterActive.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_BIOMETRIC_LOCK -> {
+                isBiometricLockEnabled.value = value
+                if (!value) isAuthenticated.value = true
+            }
         }
     }
 
@@ -423,17 +419,17 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun updateAppTheme(theme: String) {
-        encryptedPrefs.edit().putString("app_theme", theme).apply()
+        settingsRepository.setString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_APP_THEME, theme)
         appTheme.value = theme
     }
 
     fun updateThemeColor(color: String) {
-        encryptedPrefs.edit().putString("theme_color", color).apply()
+        settingsRepository.setString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_THEME_COLOR, color)
         themeColor.value = color
     }
 
     fun updateSearchEngine(engine: String) {
-        encryptedPrefs.edit().putString("search_engine", engine).apply()
+        settingsRepository.setString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_SEARCH_ENGINE, engine)
         searchEngine.value = engine
         val url = when(engine) {
             "DuckDuckGo" -> "https://duckduckgo.com/?q="
@@ -448,7 +444,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun updateCustomSearchEngine(newUrl: String) {
-        encryptedPrefs.edit().putString("custom_search_engine_url", newUrl).apply()
+        settingsRepository.setString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_CUSTOM_SEARCH_URL, newUrl)
         customSearchEngineUrl.value = newUrl
     }
 
@@ -559,23 +555,4 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 }
 
-class BrowserRepository(private val database: SecureBrowserDatabase) {
-    val allHistory: Flow<List<HistoryItem>> = database.historyDao().getAllHistory()
-    val allBookmarks: Flow<List<BookmarkItem>> = database.bookmarkDao().getAllBookmarks()
-    val allTabs: Flow<List<TabInstance>> = database.tabInstanceDao().getAllTabs()
-    val allGroups: Flow<List<TabGroup>> = database.tabGroupDao().getAllGroups()
-    fun getTelemetryFlow(): Flow<ShieldTelemetry?> = database.shieldTelemetryDao().getTelemetryFlow()
-    suspend fun getTelemetry(): ShieldTelemetry? = database.shieldTelemetryDao().getTelemetry()
-    suspend fun insertTelemetry(telemetry: ShieldTelemetry) = database.shieldTelemetryDao().insertTelemetry(telemetry)
-    suspend fun insertHistory(item: HistoryItem) = database.historyDao().insertHistoryItem(item)
-    suspend fun clearHistory() = database.historyDao().clearAllHistory()
-    suspend fun insertBookmark(item: BookmarkItem) = database.bookmarkDao().insertBookmark(item)
-    suspend fun deleteBookmarkById(id: Long) = database.bookmarkDao().deleteBookmarkById(id)
-    suspend fun clearAllBookmarks() = database.bookmarkDao().clearAllBookmarks()
-    suspend fun insertTab(tab: TabInstance) = database.tabInstanceDao().insertTab(tab)
-    suspend fun deleteTabById(tabId: String) = database.tabInstanceDao().deleteTabById(tabId)
-    suspend fun clearAllTabs() = database.tabInstanceDao().clearAllTabs()
-    suspend fun insertGroup(group: TabGroup) = database.tabGroupDao().insertGroup(group)
-    suspend fun deleteGroupById(groupId: String) = database.tabGroupDao().deleteGroupById(groupId)
-    suspend fun clearAllGroups() = database.tabGroupDao().clearAllGroups()
-}
+

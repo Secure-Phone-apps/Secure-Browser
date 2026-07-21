@@ -141,10 +141,52 @@ fun HomeView(viewModel: BrowserStateViewModel, onSearch: (String) -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            HomeActionItem(Icons.Default.History, "History") { viewModel.navigateTo(BrowserStateViewModel.Screen.Browser) }
-            HomeActionItem(Icons.Default.Bookmark, "Bookmarks") { viewModel.navigateTo(BrowserStateViewModel.Screen.Browser) }
-            HomeActionItem(Icons.Default.Download, "Downloads") { viewModel.navigateTo(BrowserStateViewModel.Screen.Downloads) }
-            HomeActionItem(Icons.Default.Settings, "Settings") { viewModel.navigateTo(BrowserStateViewModel.Screen.Settings) }
+            HomeActionItem(Icons.Default.History, "History") { viewModel.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Browser) }
+            HomeActionItem(Icons.Default.Bookmark, "Bookmarks") { viewModel.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Browser) }
+            HomeActionItem(Icons.Default.Download, "Downloads") { viewModel.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Downloads) }
+            HomeActionItem(Icons.Default.Settings, "Settings") { viewModel.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Settings) }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        // Quick Access Bookmarks
+        Text(
+            "Quick Access",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.align(Alignment.Start)
+        )
+        Spacer(Modifier.height(8.dp))
+        QuickAccessGrid(viewModel)
+    }
+}
+
+@Composable
+fun QuickAccessGrid(viewModel: BrowserStateViewModel) {
+    val quickAccess = listOf(
+        "DuckDuckGo" to "https://duckduckgo.com",
+        "Wikipedia" to "https://wikipedia.org",
+        "Reddit" to "https://reddit.com",
+        "GitHub" to "https://github.com"
+    )
+    
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        quickAccess.forEach { (name, url) ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable { viewModel.updateActiveTabUrl(url, name) }
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(name.take(1), style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+                Text(name, style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }
@@ -199,10 +241,10 @@ fun BottomToolbar(viewModel: BrowserStateViewModel, webView: WebView) {
             }) { 
                 Icon(Icons.Default.Home, "Home", tint = MaterialTheme.colorScheme.primary) 
             }
-            IconButton(onClick = { viewModel.navigateTo(BrowserStateViewModel.Screen.TabManager) }) { 
+            IconButton(onClick = { viewModel.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.AdvancedTabs) }) { 
                 Icon(Icons.Default.Layers, "Tabs") 
             }
-            IconButton(onClick = { viewModel.navigateTo(BrowserStateViewModel.Screen.Settings) }) { 
+            IconButton(onClick = { viewModel.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Settings) }) { 
                 Icon(Icons.Default.Settings, "Settings") 
             }
         }

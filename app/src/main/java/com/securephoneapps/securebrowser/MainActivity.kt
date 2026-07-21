@@ -35,102 +35,40 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        val webViewManager = com.securephoneapps.securebrowser.engine.WebViewManager(this)
+
         setContent {
             val viewModel: BrowserStateViewModel = viewModel()
             val isAuthenticated by viewModel.isAuthenticated.collectAsState()
             val currentScreen by viewModel.currentScreen.collectAsState()
-            val context = androidx.compose.ui.platform.LocalContext.current
+            val activeTabId by viewModel.activeTabId.collectAsState()
             
-            val sharedWebView = remember { 
-                WebView(context).apply {
-                    layoutParams = android.view.ViewGroup.LayoutParams(
-                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.databaseEnabled = true
-                    settings.setSupportZoom(true)
-                    settings.builtInZoomControls = true
-                    settings.displayZoomControls = false
-                    settings.allowFileAccess = false
-                    settings.allowContentAccess = false
-                    settings.loadWithOverviewMode = true
-                    settings.useWideViewPort = true
-                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                    
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        settings.safeBrowsingEnabled = true
-                    }
-                    
-                    val downloadManager = com.securephoneapps.securebrowser.data.SecureDownloadManager(context)
-                    val lifecycleOwner = context as? androidx.lifecycle.LifecycleOwner ?: (context as? android.content.ContextWrapper)?.baseContext as? androidx.lifecycle.LifecycleOwner
-                    setDownloadListener(
-                        downloadManager.SecureContainerDownloadListener(
-                            scope = lifecycleOwner?.lifecycleScope ?: kotlinx.coroutines.GlobalScope,
-                            viewModel = viewModel,
-                            onPdfTriggered = { pdfUrl -> viewModel.updateActiveTabUrl(pdfUrl, "PDF Viewer") }
-                        )
-                    )
-
-                    webViewClient = com.securephoneapps.securebrowser.engine.HardenedWebViewClient(
-                        shieldsEngine = com.securephoneapps.securebrowser.engine.ShieldsCoreEngine(),
-                        onTrackerBlocked = { viewModel.incrementTelemetry(trackers = 1, url = it) },
-                        onCanvasFaked = { viewModel.incrementTelemetry(canvas = 1) },
-                        onFingerprintMocked = { viewModel.incrementTelemetry(fingerprint = 1) },
-                        onPageStartedCallback = { url -> viewModel.updateActiveTabUrl(url, "Loading...") },
-                        onPageFinishedCallback = { url, title -> 
-                            viewModel.updateActiveTabUrl(url, title)
-                            viewModel.recordHistory(url, title)
-                        },
-                        viewModel = viewModel
-                    )
-                    webChromeClient = object : android.webkit.WebChromeClient() {
-                        override fun onPermissionRequest(request: android.webkit.PermissionRequest) {
-                            if (viewModel.isHardwareShutterActive.value) {
-                                request.deny()
-                            } else {
-                                request.grant(request.resources)
-                            }
-                        }
-                        override fun onProgressChanged(view: WebView, newProgress: Int) {
-                            viewModel.pageLoadingProgress.value = newProgress
-                        }
-                    }
+            val webView = remember(activeTabId) { 
+                activeTabId?.let { webViewManager.getOrCreateWebView(it, viewModel) }
+            }
+            
+            // Re-authentication logic on start
+            LaunchedEffect(Unit) {
+                if (viewModel.isBiometricLockEnabled.value && !viewModel.isAuthenticated.value) {
+                    showBiometricPrompt { viewModel.isAuthenticated.value = true }
                 }
             }
 
-            // Sync Settings to WebView
+            // Sync Settings to Pooled WebViews
             val jsEnabled by viewModel.javascriptEnabled.collectAsState()
             val userAgent by viewModel.selectedUserAgent.collectAsState()
             val blockThirdPartyCookies by viewModel.blockThirdPartyCookies.collectAsState()
-            val forcedDarkMode by viewModel.forcedDarkModeEnabled.collectAsState()
             
-            LaunchedEffect(jsEnabled) {
-                sharedWebView.settings.javaScriptEnabled = jsEnabled
-            }
-            
-            LaunchedEffect(userAgent) {
-                sharedWebView.settings.userAgentString = userAgent
-            }
-
-            LaunchedEffect(blockThirdPartyCookies) {
-                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(sharedWebView, !blockThirdPartyCookies)
-            }
-
-            LaunchedEffect(forcedDarkMode) {
-                if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.FORCE_DARK)) {
-                    androidx.webkit.WebSettingsCompat.setForceDark(sharedWebView.settings, 
-                        if (forcedDarkMode) androidx.webkit.WebSettingsCompat.FORCE_DARK_ON else androidx.webkit.WebSettingsCompat.FORCE_DARK_OFF)
-                }
+            LaunchedEffect(jsEnabled, userAgent, blockThirdPartyCookies) {
+                webViewManager.updateSettings(viewModel)
             }
 
             val triggerUrlLoad by viewModel.activeTabUrl.collectAsState()
             
             LaunchedEffect(triggerUrlLoad) {
                 if (triggerUrlLoad.isNotBlank() && triggerUrlLoad != "about:blank") {
-                    if (sharedWebView.url != triggerUrlLoad) {
-                        sharedWebView.loadUrl(triggerUrlLoad)
+                    if (webView?.url != triggerUrlLoad) {
+                        webView?.loadUrl(triggerUrlLoad)
                     }
                 }
             }
@@ -158,12 +96,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     }
                 } else {
                     when (currentScreen) {
-                        BrowserStateViewModel.Screen.Browser -> {
-                            MainBrowserScreen(viewModel, sharedWebView)
+                        com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Browser -> {
+                            webView?.let {
+                                MainBrowserScreen(viewModel, it)
+                            } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
                         }
-                        BrowserStateViewModel.Screen.Settings -> GranularControlSettingsScreen(viewModel)
-                        BrowserStateViewModel.Screen.Downloads -> SecureDownloadsVaultScreen(viewModel)
-                        BrowserStateViewModel.Screen.TabManager -> AdvancedTabManagerScreen(viewModel)
+                        com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Settings -> GranularControlSettingsScreen(viewModel)
+                        com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Downloads -> SecureDownloadsVaultScreen(viewModel)
+                        com.securephoneapps.securebrowser.manager.NavigationManager.Screen.AdvancedTabs -> AdvancedTabManagerScreen(viewModel)
                     }
                 }
             }

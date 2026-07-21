@@ -115,6 +115,10 @@ class HardenedWebViewClient(
             try {
                 val requestHeaders = request.requestHeaders?.toMutableMap() ?: mutableMapOf()
                 
+                // Add Privacy Protection Headers (GPC & DNT)
+                requestHeaders["Sec-GPC"] = "1"
+                requestHeaders["DNT"] = "1"
+
                 // Stripping specific privacy-leaking headers
                 val refererKeys = requestHeaders.keys.filter { it.equals("Referer", ignoreCase = true) }
                 for (key in refererKeys) {
@@ -373,16 +377,15 @@ class HardenedWebViewClient(
                 }
 
                 if (viewModel?.webRtcPrivacyEnabled?.value == true) {
-                    WebViewCompat.addDocumentStartJavaScript(view, shieldsEngine.webRtcShieldScript, setOf("*"))
+                    WebViewCompat.addDocumentStartJavaScript(view, com.securephoneapps.securebrowser.engine.ScriptProvider.webRtcShieldScript, setOf("*"))
                 }
 
                 if (viewModel?.deAMPEnabled?.value == true) {
-                    WebViewCompat.addDocumentStartJavaScript(view, shieldsEngine.ampNeutralizerScript, setOf("*"))
+                    WebViewCompat.addDocumentStartJavaScript(view, com.securephoneapps.securebrowser.engine.ScriptProvider.ampNeutralizerScript, setOf("*"))
                 }
+
+                WebViewCompat.addDocumentStartJavaScript(view, com.securephoneapps.securebrowser.engine.ScriptProvider.gpcScript, setOf("*"))
                 
-                if (viewModel?.webRtcPrivacyEnabled?.value == true) {
-                    WebViewCompat.addDocumentStartJavaScript(view, shieldsEngine.webRtcShieldScript, setOf("*"))
-                }
                 registeredWebViews.add(hash)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -434,10 +437,10 @@ class HardenedWebViewClient(
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             view?.evaluateJavascript(getFingerprintInjectionScript(), null)
             if (viewModel?.deAMPEnabled?.value == true) {
-                view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
+                view?.evaluateJavascript(com.securephoneapps.securebrowser.engine.ScriptProvider.ampNeutralizerScript, null)
             }
             if (viewModel?.webRtcPrivacyEnabled?.value == true) {
-                view?.evaluateJavascript(shieldsEngine.webRtcShieldScript, null)
+                view?.evaluateJavascript(com.securephoneapps.securebrowser.engine.ScriptProvider.webRtcShieldScript, null)
             }
         }
         view?.let { injectCustomUserScripts(it) }
@@ -456,10 +459,13 @@ class HardenedWebViewClient(
         // Reinforce injection on completion just in case of iframe or state resets
         view?.evaluateJavascript(getFingerprintInjectionScript(), null)
         if (viewModel?.deAMPEnabled?.value == true) {
-            view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
+            view?.evaluateJavascript(com.securephoneapps.securebrowser.engine.ScriptProvider.ampNeutralizerScript, null)
         }
         if (viewModel?.webRtcPrivacyEnabled?.value == true) {
-            view?.evaluateJavascript(shieldsEngine.webRtcShieldScript, null)
+            view?.evaluateJavascript(com.securephoneapps.securebrowser.engine.ScriptProvider.webRtcShieldScript, null)
+        }
+        if (viewModel?.forcedDarkModeEnabled?.value == true) {
+            view?.evaluateJavascript(com.securephoneapps.securebrowser.engine.ScriptProvider.darkModeScript, null)
         }
         view?.let { injectCustomUserScripts(it) }
         val title = view?.title ?: ""

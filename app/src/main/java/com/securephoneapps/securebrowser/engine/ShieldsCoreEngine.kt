@@ -185,38 +185,6 @@ class ShieldsCoreEngine {
         return blockedDomains.contains(host)
     }
 
-    val ampNeutralizerScript: String = """
-        (function() {
-            var canonical = document.querySelector('link[rel="canonical"]');
-            if (canonical && canonical.href && window.location.href !== canonical.href) {
-                if (window.location.host.includes('google.com') && window.location.pathname.includes('/amp/')) {
-                    window.location.replace(canonical.href);
-                }
-            }
-        })();
-    """.trimIndent()
-
-    val webRtcShieldScript: String = """
-        (function() {
-            if (window.RTCPeerConnection) {
-                const origPeerConnection = window.RTCPeerConnection;
-                window.RTCPeerConnection = function(config) {
-                    if (config && config.iceServers) {
-                        config.iceServers = [];
-                    }
-                    const pc = new origPeerConnection(config);
-                    // Prevent local IP leak
-                    pc.createDataChannel = function() { return null; };
-                    return pc;
-                };
-                window.RTCPeerConnection.prototype = origPeerConnection.prototype;
-            }
-            if (window.webkitRTCPeerConnection) {
-                window.webkitRTCPeerConnection = window.RTCPeerConnection;
-            }
-        })();
-    """.trimIndent()
-
     private fun extractHost(url: String): String? {
         return try {
             val doubleSlash = url.indexOf("//")

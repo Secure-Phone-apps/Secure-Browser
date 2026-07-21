@@ -56,7 +56,7 @@ fun GranularControlSettingsScreen(viewModel: BrowserStateViewModel) {
             TopAppBar(
                 title = { Text("Settings", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.navigateTo(BrowserStateViewModel.Screen.Browser) }) {
+                    IconButton(onClick = { viewModel.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Browser) }) {
                         Icon(Icons.Default.ArrowBack, "Back")
                     }
                 }
@@ -108,7 +108,7 @@ fun GranularControlSettingsScreen(viewModel: BrowserStateViewModel) {
             Spacer(Modifier.height(24.dp))
             SettingsSectionTitle("Storage & Downloads")
             Button(
-                onClick = { viewModel.navigateTo(BrowserStateViewModel.Screen.Downloads) },
+                onClick = { viewModel.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Downloads) },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,

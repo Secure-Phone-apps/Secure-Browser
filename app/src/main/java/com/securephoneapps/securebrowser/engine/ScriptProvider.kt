@@ -33,4 +33,16 @@ object ScriptProvider {
             }
         })();
     """.trimIndent()
+
+    val gpcScript = """
+        (function() {
+            if (!('globalPrivacyControl' in navigator)) {
+                Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', {
+                    get: function() { return true; },
+                    enumerable: true,
+                    configurable: false
+                });
+            }
+        })();
+    """.trimIndent()
 }

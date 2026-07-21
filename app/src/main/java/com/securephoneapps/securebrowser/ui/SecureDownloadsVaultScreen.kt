@@ -33,7 +33,7 @@ fun SecureDownloadsVaultScreen(viewModel: BrowserStateViewModel) {
             TopAppBar(
                 title = { Text("Secure Vault", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.navigateTo(BrowserStateViewModel.Screen.Browser) }) {
+                    IconButton(onClick = { viewModel.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Browser) }) {
                         Icon(Icons.Default.ArrowBack, "Back")
                     }
                 },
