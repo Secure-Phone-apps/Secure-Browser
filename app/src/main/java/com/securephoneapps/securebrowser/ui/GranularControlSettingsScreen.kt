@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SettingsBackupRestore
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -67,6 +68,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.securephoneapps.securebrowser.viewmodel.BrowserStateViewModel
+
+@Composable
+fun FrostedGlassContainer(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(14.dp)
+    ) {
+        content()
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -343,6 +364,105 @@ fun GranularControlSettingsScreen(
                         Column {
                             Text("Import Encrypted Backup", color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             Text("Restore bookmarks from encrypted profile string", color = Color(0xFF64748B), fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // -- SECTION: Secure Vault Downloads --
+            val downloadedFiles by viewModel.downloadedFilesList.collectAsState()
+            val context = androidx.compose.ui.platform.LocalContext.current
+            
+            // Trigger refresh on enter
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                viewModel.refreshDownloadedFiles(context)
+            }
+
+            Text(
+                text = "🛡️ SECURE VAULT DOWNLOADS",
+                fontSize = 11.sp,
+                color = Color(0xFF64748B),
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(12.dp)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)), // Deep Slate background for the vault
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    if (downloadedFiles.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(100.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "No secure files in sandbox",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    } else {
+                        downloadedFiles.forEach { file ->
+                            FrostedGlassContainer(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = file.name,
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${file.length() / 1024} KB • Encrypted",
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                    Row {
+                                        IconButton(
+                                            onClick = { viewModel.exportFileToPublicStorage(context, file) },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Share,
+                                                contentDescription = "Export",
+                                                tint = Color(0xFF3B82F6),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        IconButton(
+                                            onClick = { viewModel.purgeFile(context, file) },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.DeleteForever,
+                                                contentDescription = "Purge",
+                                                tint = Color(0xFFEF4444),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

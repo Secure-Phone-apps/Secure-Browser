@@ -26,6 +26,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import android.content.Intent
+import java.io.File
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.net.URI
@@ -102,6 +104,46 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val proxyType = MutableStateFlow(encryptedPrefs.getString("proxy_type", "SOCKS") ?: "SOCKS")
     val isBiometricLockEnabled = MutableStateFlow(encryptedPrefs.getBoolean("biometric_lock_enabled", false))
     val pageLoadingProgress = MutableStateFlow(0)
+    val downloadedFilesList = MutableStateFlow<List<java.io.File>>(emptyList())
+
+    fun refreshDownloadedFiles(context: android.content.Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val downloadsDir = java.io.File(context.noBackupFilesDir, "secure_downloads")
+            if (downloadsDir.exists()) {
+                val files = downloadsDir.listFiles()?.toList() ?: emptyList()
+                downloadedFilesList.value = files.sortedByDescending { it.lastModified() }
+            }
+        }
+    }
+
+    fun exportFileToPublicStorage(context: android.content.Context, file: java.io.File) {
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = context.contentResolver.getType(uri) ?: "*/*"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(android.content.Intent.createChooser(intent, "Export Secure File"))
+        } catch (e: Exception) {
+            viewModelScope.launch(Dispatchers.Main) {
+                android.widget.Toast.makeText(context, "Export failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun purgeFile(context: Context, file: java.io.File) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (file.exists()) {
+                file.delete()
+                refreshDownloadedFiles(context)
+            }
+        }
+    }
     val isHardwareShutterActive = MutableStateFlow(encryptedPrefs.getBoolean("hardware_shutter_active", true))
     val isAudioShieldActive = MutableStateFlow(true)
     val searchSuggestions = MutableStateFlow<List<String>>(emptyList())

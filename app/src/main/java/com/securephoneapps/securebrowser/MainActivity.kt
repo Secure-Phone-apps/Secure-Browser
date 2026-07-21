@@ -67,6 +67,7 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -515,6 +516,7 @@ fun configureEngineParameters(settings: WebSettings, viewModel: BrowserStateView
 class SecureContainerDownloadListener(
     private val context: android.content.Context,
     private val scope: CoroutineScope,
+    private val viewModel: BrowserStateViewModel?,
     private val onPdfTriggered: (String) -> Unit
 ) : DownloadListener {
 
@@ -619,6 +621,7 @@ class SecureContainerDownloadListener(
                         }
 
                         withContext(Dispatchers.Main) {
+                            viewModel?.refreshDownloadedFiles(context)
                             Toast.makeText(context, "Downloaded securely to isolated storage: $fileName", Toast.LENGTH_LONG).show()
                         }
                     } else {
@@ -707,7 +710,7 @@ fun BrowserWorkspaceScreen(
             webViewInstance = this
 
             // Encrypted, isolated download interceptor pipeline
-            setDownloadListener(SecureContainerDownloadListener(context, coroutineScope) { pdfUrl ->
+            setDownloadListener(SecureContainerDownloadListener(context, coroutineScope, viewModel) { pdfUrl ->
                 triggerUrlLoad = pdfUrl
             })
 
@@ -1162,6 +1165,17 @@ fun BrowserWorkspaceScreen(
                     modifier = Modifier.testTag("nav_tabs")
                 ) {
                     Icon(Icons.Default.Layers, contentDescription = "Tab Manager", tint = Color(0xFF475569), modifier = Modifier.size(22.dp))
+                }
+
+                IconButton(
+                    onClick = {
+                        // Open Secure Vault Downloads in Settings
+                        viewModel.navigateTo(BrowserStateViewModel.Screen.Settings)
+                        // Note: We'll ensure the Downloads section is visible or scrolled to in the next step
+                    },
+                    modifier = Modifier.testTag("nav_downloads")
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = "Downloads Vault", tint = Color(0xFF475569), modifier = Modifier.size(22.dp))
                 }
 
                 IconButton(
