@@ -1030,11 +1030,15 @@ fun BrowserWorkspaceScreen(
 
                 // Editable Input Area
                 Box(modifier = Modifier.weight(1f)) {
+                    var isDropdownExpanded by remember { mutableStateOf(false) }
+
                     OutlinedTextField(
                         value = userTypedInput,
                         onValueChange = {
                             userTypedInput = it
                             viewModel.fetchSearchSuggestions(it)
+                            // Toggle dropdown visibility based on input content
+                            isDropdownExpanded = it.isNotBlank()
                         },
                         placeholder = { Text("Search or type URL securely...", color = Color(0xFF94A3B8), fontSize = 13.sp) },
                         singleLine = true,
@@ -1075,23 +1079,28 @@ fun BrowserWorkspaceScreen(
                     )
 
                     val searchSuggestions by viewModel.searchSuggestions.collectAsState()
-                    val showSuggestions = searchSuggestions.isNotEmpty() && userTypedInput.isNotBlank()
+                    val showSuggestions = isDropdownExpanded && searchSuggestions.isNotEmpty() && userTypedInput.isNotBlank()
 
                     DropdownMenu(
                         expanded = showSuggestions,
-                        onDismissRequest = { viewModel.searchSuggestions.value = emptyList() },
+                        onDismissRequest = { 
+                            isDropdownExpanded = false
+                            viewModel.searchSuggestions.value = emptyList() 
+                        },
                         properties = androidx.compose.ui.window.PopupProperties(focusable = false),
-                        modifier = Modifier.fillMaxWidth().background(Color.White)
+                        modifier = Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp)
                     ) {
                         searchSuggestions.forEach { suggestion ->
                             DropdownMenuItem(
                                 text = { Text(suggestion, color = Color(0xFF0F172A)) },
                                 onClick = {
                                     userTypedInput = suggestion
-                                    // Suggestion Dropdown Auto-Dismiss: Guarantee immediate closure
+                                    // Synchronized Autocomplete Auto-Dismiss: Guarantee instant closure
+                                    isDropdownExpanded = false
                                     viewModel.searchSuggestions.value = emptyList()
                                     keyboardController?.hide()
                                     focusManager.clearFocus()
+                                    
                                     var target = viewModel.executeUrlResolution(suggestion)
                                     target = shieldsEngine.stripTrackingParameters(target)
                                     if (httpsOnly && target.startsWith("http://", ignoreCase = true)) {
@@ -1265,10 +1274,8 @@ fun BrowserWorkspaceScreen(
                 // SESSION PANIC TERMINATION ACTION
                 IconButton(
                     onClick = {
+                        // Purge and kill sequence handled entirely within the ViewModel to ensure thread-safety
                         viewModel.executeHardPanicPurge(webViewInstance)
-                        // Completely drop the OS application process matrix instantly
-                        android.os.Process.killProcess(android.os.Process.myPid())
-                        System.exit(0)
                     },
                     modifier = Modifier.testTag("nav_panic")
                 ) {

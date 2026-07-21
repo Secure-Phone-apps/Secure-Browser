@@ -130,45 +130,59 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                 val extension = MimeTypeMap.getFileExtensionFromUrl(file.absolutePath)
                 val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
                 
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
-                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // Modern MediaStore Pipeline for API 29+
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+                        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                         val subDir = if (mimeType.startsWith("image/")) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS
                         put(MediaStore.MediaColumns.RELATIVE_PATH, "$subDir/SecureBrowserDownloads")
                         put(MediaStore.MediaColumns.IS_PENDING, 1)
                     }
-                }
 
-                // Robust Mime Exporter Check: Bypass MediaStore.Images for non-image types
-                val collectionUri = if (mimeType.startsWith("image/")) {
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                } else {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                    val collectionUri = if (mimeType.startsWith("image/")) {
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
                     } else {
-                        // Fallback for older versions
-                        MediaStore.Files.getContentUri("external")
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI
                     }
-                }
 
-                val uri = context.contentResolver.insert(collectionUri, values)
-                if (uri != null) {
-                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        FileInputStream(file).use { inputStream ->
-                            inputStream.copyTo(outputStream)
+                    val uri = context.contentResolver.insert(collectionUri, values)
+                    if (uri != null) {
+                        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                            FileInputStream(file).use { inputStream ->
+                                val buffer = ByteArray(8192)
+                                var bytesRead: Int
+                                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                    outputStream.write(buffer, 0, bytesRead)
+                                }
+                            }
                         }
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         values.clear()
                         values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                         context.contentResolver.update(uri, values, null, null)
-                    }
-                    withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "Asset successfully exported to public storage", android.widget.Toast.LENGTH_LONG).show()
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "File successfully exported to Public Vault", android.widget.Toast.LENGTH_LONG).show()
+                        }
                     }
                 } else {
-                    throw Exception("Failed to create MediaStore entry")
+                    // Legacy Fallback for Android 9 and below
+                    val destDir = if (mimeType.startsWith("image/")) {
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                    } else {
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    }
+                    val secureDir = java.io.File(destDir, "SecureBrowserDownloads")
+                    if (!secureDir.exists()) secureDir.mkdirs()
+                    val destFile = java.io.File(secureDir, file.name)
+                    
+                    java.io.FileInputStream(file).use { inputStream ->
+                        java.io.FileOutputStream(destFile).use { outputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "File exported to legacy storage: ${destFile.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
+                    }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -514,6 +528,12 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                 
                 // 4. Re-create default tab to prevent empty state crashes
                 createDefaultTab()
+            }
+
+            // Leak-Proof Panic Erase Threading: Kill process ONLY after all tasks finish
+            withContext(Dispatchers.Main) {
+                android.os.Process.killProcess(android.os.Process.myPid())
+                java.lang.System.exit(0)
             }
         }
     }
