@@ -45,8 +45,8 @@ class HardenedWebViewClient(
     private fun sweepPreviousOrigin(url: String?) {
         url?.let {
             try {
-                val uri = android.net.Uri.parse(it)
-                val currentHost = uri.host
+                // Cross-Domain Cleaning Lock: Compare hosts precisely to prevent redundant storage sweeps on same-site redirects
+                val currentHost = java.net.URL(it).host
                 if (currentHost != null) {
                     val previousHost = lastHost
                     if (previousHost != null && previousHost != currentHost) {
@@ -60,7 +60,7 @@ class HardenedWebViewClient(
                     lastHost = currentHost
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                // Non-critical exception handling for malformed internal URLs
             }
         }
     }

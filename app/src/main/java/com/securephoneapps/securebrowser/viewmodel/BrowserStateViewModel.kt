@@ -110,6 +110,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val proxyPort = MutableStateFlow(encryptedPrefs.getInt("proxy_port", 9050))
     val proxyType = MutableStateFlow(encryptedPrefs.getString("proxy_type", "SOCKS") ?: "SOCKS")
     val isBiometricLockEnabled = MutableStateFlow(encryptedPrefs.getBoolean("biometric_lock_enabled", false))
+    val isAuthenticated = MutableStateFlow(!encryptedPrefs.getBoolean("biometric_lock_enabled", false))
     val pageLoadingProgress = MutableStateFlow(0)
     val downloadedFilesList = MutableStateFlow<List<java.io.File>>(emptyList())
 
@@ -371,7 +372,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun fetchSearchSuggestions(query: String) {
-        if (query.trim().isEmpty()) {
+        if (query.isBlank()) {
             searchSuggestions.value = emptyList()
             return
         }
@@ -781,8 +782,19 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch(Dispatchers.IO) {
             databaseMutex.withLock {
                 repository.insertTab(updatedTab)
-                // Add to history if not incognito and not about:blank
-                if (!tab.isIncognito && url != "about:blank" && url.isNotBlank()) {
+            }
+        }
+    }
+
+    // ELIMINATE REDUNDANT DATABASE WRITES: History records are handled exclusively by onPageFinished
+    fun recordHistory(url: String, title: String) {
+        val tabId = activeTabId.value ?: return
+        val currentTabs = _tabsState.value
+        val tab = currentTabs.find { it.tabId == tabId } ?: return
+
+        if (!tab.isIncognito && url != "about:blank" && url.isNotBlank()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                databaseMutex.withLock {
                     repository.insertHistory(
                         HistoryItem(
                             url = url,

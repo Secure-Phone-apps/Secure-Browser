@@ -263,10 +263,20 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     if (currentScreen == BrowserStateViewModel.Screen.Browser) {
                         themeColorHex?.let { hex ->
                             try {
-                                val colorInt = android.graphics.Color.parseColor(hex)
+                                var colorInt = android.graphics.Color.parseColor(hex)
+                                // System Bar Tint Validation: Force default secure dark gray if color is invalid/transparent
+                                if (colorInt == 0 || colorInt == android.graphics.Color.TRANSPARENT) {
+                                    colorInt = 0xFF1E1E1E.toInt()
+                                }
                                 window.statusBarColor = colorInt
                                 window.navigationBarColor = colorInt
-                            } catch (e: Exception) {}
+                            } catch (e: Exception) {
+                                window.statusBarColor = 0xFF1E1E1E.toInt()
+                                window.navigationBarColor = 0xFF1E1E1E.toInt()
+                            }
+                        } ?: run {
+                            window.statusBarColor = 0xFF1E1E1E.toInt()
+                            window.navigationBarColor = 0xFF1E1E1E.toInt()
                         }
                     } else {
                         // Reset to default on other screens
@@ -276,7 +286,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 }
 
                 val biometricEnabled by viewModel.isBiometricLockEnabled.collectAsState()
-                var isAuthenticated by remember { mutableStateOf(!biometricEnabled) }
+                val isAuthenticated by viewModel.isAuthenticated.collectAsState()
 
                 if (!isAuthenticated) {
                     Box(
@@ -314,19 +324,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             Button(
                                 onClick = {
                                     showBiometricPrompt {
-                                        isAuthenticated = true
+                                        viewModel.isAuthenticated.value = true
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
                             ) {
                                 Text("Unlock App", color = Color.White)
                             }
-                        }
-                    }
-
-                    LaunchedEffect(Unit) {
-                        showBiometricPrompt {
-                            isAuthenticated = true
                         }
                     }
                 } else {
@@ -363,6 +367,18 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Biometric App-Lock Lifecycle Repair: Trigger challenge every time app regains system focus
+        val viewModel = androidx.lifecycle.ViewModelProvider(this)[BrowserStateViewModel::class.java]
+        if (viewModel.isBiometricLockEnabled.value) {
+            viewModel.isAuthenticated.value = false
+            showBiometricPrompt {
+                viewModel.isAuthenticated.value = true
             }
         }
     }
@@ -1018,6 +1034,7 @@ fun BrowserWorkspaceScreen(
                                 text = { Text(suggestion, color = Color(0xFF0F172A)) },
                                 onClick = {
                                     userTypedInput = suggestion
+                                    // Suggestion Dropdown Auto-Dismiss: Guarantee immediate closure
                                     viewModel.searchSuggestions.value = emptyList()
                                     keyboardController?.hide()
                                     focusManager.clearFocus()
@@ -1340,8 +1357,9 @@ fun BrowserWorkspaceScreen(
                                 canGoBack = sharedWebView.canGoBack()
                                 canGoForward = sharedWebView.canGoForward()
                                 
-                                // Handle internal navigation state syncing
+                                // Handle internal navigation state syncing and record history exclusively here
                                 viewModel.updateActiveTabUrl(url, title)
+                                viewModel.recordHistory(url, title)
                             },
                             isAudioShieldActive = { viewModel.isAudioShieldActive.value },
                             viewModel = viewModel
