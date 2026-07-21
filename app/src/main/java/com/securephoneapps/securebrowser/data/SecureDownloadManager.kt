@@ -135,10 +135,44 @@ class SecureDownloadManager(private val context: Context) {
             scope.launch {
                 try {
                     withContext(Dispatchers.IO) {
-                        val connection = URL(url).openConnection() as HttpURLConnection
+                        var currentUrl = url
+                        var connection = URL(currentUrl).openConnection() as HttpURLConnection
+                        connection.instanceFollowRedirects = true
                         connection.setRequestProperty("User-Agent", userAgent)
-                        if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                            val fileName = getFileName(url, contentDisposition, mimetype)
+                        
+                        val cookieManager = android.webkit.CookieManager.getInstance()
+                        val cookies = cookieManager.getCookie(currentUrl)
+                        if (!cookies.isNullOrEmpty()) {
+                            connection.setRequestProperty("Cookie", cookies)
+                        }
+
+                        var responseCode = connection.responseCode
+                        var redirectCount = 0
+                        val maxRedirects = 5
+
+                        // Explicitly handle redirects to forward cookies properly and support cross-protocol redirects
+                        while ((responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
+                                    responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
+                                    responseCode == HttpURLConnection.HTTP_SEE_OTHER ||
+                                    responseCode == 307 || responseCode == 308) && redirectCount < maxRedirects) {
+                            val newUrl = connection.getHeaderField("Location") ?: break
+                            connection.disconnect()
+                            currentUrl = URL(URL(currentUrl), newUrl).toString()
+                            
+                            connection = URL(currentUrl).openConnection() as HttpURLConnection
+                            connection.instanceFollowRedirects = true
+                            connection.setRequestProperty("User-Agent", userAgent)
+                            
+                            val loopCookies = cookieManager.getCookie(currentUrl)
+                            if (!loopCookies.isNullOrEmpty()) {
+                                connection.setRequestProperty("Cookie", loopCookies)
+                            }
+                            responseCode = connection.responseCode
+                            redirectCount++
+                        }
+
+                        if (responseCode == HttpURLConnection.HTTP_OK) {
+                            val fileName = getFileName(currentUrl, contentDisposition, mimetype)
                             val downloadsDir = File(context.noBackupFilesDir, "secure_downloads").apply { if (!exists()) mkdirs() }
                             val outputFile = File(downloadsDir, fileName)
 
@@ -152,6 +186,10 @@ class SecureDownloadManager(private val context: Context) {
                                 viewModel?.refreshDownloadedFiles(context)
                                 Toast.makeText(context, "Securely downloaded: ${fileName}", Toast.LENGTH_LONG).show()
                             }
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "Download failed with HTTP code $responseCode", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -163,7 +201,16 @@ class SecureDownloadManager(private val context: Context) {
         private fun getFileName(url: String, cd: String?, mime: String?): String {
             var name = cd?.substringAfter("filename=", "")?.substringBefore(";")?.trim()?.removeSurrounding("\"") ?: ""
             if (name.isEmpty()) name = url.substringAfterLast("/").substringBefore("?")
-            return if (name.isEmpty()) "downloaded_asset" else name
+            if (name.isEmpty()) name = "downloaded_asset"
+            
+            // If the name doesn't have an extension, try to append one based on the mimetype
+            if (!name.contains(".") && !mime.isNullOrEmpty()) {
+                val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
+                if (!ext.isNullOrEmpty()) {
+                    name = "$name.$ext"
+                }
+            }
+            return name
         }
     }
 }

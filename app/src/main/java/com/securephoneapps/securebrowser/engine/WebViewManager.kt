@@ -4,6 +4,7 @@ import android.content.Context
 import android.webkit.CookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
+import androidx.lifecycle.viewModelScope
 import com.securephoneapps.securebrowser.viewmodel.BrowserStateViewModel
 
 class WebViewManager(private val context: Context) {
@@ -20,6 +21,22 @@ class WebViewManager(private val context: Context) {
             webView.settings.apply {
                 javaScriptEnabled = viewModel.javascriptEnabled.value
                 userAgentString = viewModel.selectedUserAgent.value
+                
+                if (viewModel.forcedDarkModeEnabled.value) {
+                    if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.FORCE_DARK)) {
+                        androidx.webkit.WebSettingsCompat.setForceDark(this, androidx.webkit.WebSettingsCompat.FORCE_DARK_ON)
+                    }
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        isAlgorithmicDarkeningAllowed = true
+                    }
+                } else {
+                    if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.FORCE_DARK)) {
+                        androidx.webkit.WebSettingsCompat.setForceDark(this, androidx.webkit.WebSettingsCompat.FORCE_DARK_OFF)
+                    }
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        isAlgorithmicDarkeningAllowed = false
+                    }
+                }
             }
             CookieManager.getInstance().setAcceptThirdPartyCookies(webView, !viewModel.blockThirdPartyCookies.value)
         }
@@ -46,6 +63,16 @@ class WebViewManager(private val context: Context) {
                 
                 // Fingerprinting Resistance
                 userAgentString = viewModel.selectedUserAgent.value
+
+                // Native Force Dark Mode
+                if (viewModel.forcedDarkModeEnabled.value) {
+                    if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.FORCE_DARK)) {
+                        androidx.webkit.WebSettingsCompat.setForceDark(this, androidx.webkit.WebSettingsCompat.FORCE_DARK_ON)
+                    }
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        isAlgorithmicDarkeningAllowed = true
+                    }
+                }
             }
             
             webViewClient = HardenedWebViewClient(
@@ -59,6 +86,18 @@ class WebViewManager(private val context: Context) {
                     viewModel.recordHistory(url, title)
                 },
                 viewModel = viewModel
+            )
+
+            // Register Secure Container Download Listener for secure and private downloads
+            val downloadManager = com.securephoneapps.securebrowser.data.SecureDownloadManager(context)
+            setDownloadListener(
+                downloadManager.SecureContainerDownloadListener(
+                    scope = viewModel.viewModelScope,
+                    viewModel = viewModel,
+                    onPdfTriggered = { pdfUrl ->
+                        viewModel.loadUrl(pdfUrl)
+                    }
+                )
             )
             webChromeClient = object : android.webkit.WebChromeClient() {
                 override fun onPermissionRequest(request: android.webkit.PermissionRequest) {

@@ -3,8 +3,10 @@ package com.securephoneapps.securebrowser.engine
 object ScriptProvider {
     val darkModeScript = """
         (function() {
+            if (window.v_custom_dark_active) return;
+            window.v_custom_dark_active = true;
             var style = document.createElement('style');
-            style.innerHTML = 'html, body { filter: invert(0.9) hue-rotate(180deg) !important; background: #121212 !important; } img, video { filter: invert(1) hue-rotate(180deg) !important; }';
+            style.innerHTML = 'html, body { background-color: #121212 !important; color: #E0E0E0 !important; } p, span, h1, h2, h3, h4, h5, h6, li, a, td, th { color: #E0E0E0 !important; }';
             document.head.appendChild(style);
         })();
     """.trimIndent()

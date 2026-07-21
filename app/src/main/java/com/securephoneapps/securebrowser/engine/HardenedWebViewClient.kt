@@ -110,8 +110,19 @@ class HardenedWebViewClient(
             return shieldsEngine.generateBlankResponse()
         }
 
+        val isMediaRequest = url.contains(".mp4", ignoreCase = true) ||
+                url.contains(".webm", ignoreCase = true) ||
+                url.contains(".m3u8", ignoreCase = true) ||
+                url.contains(".ts", ignoreCase = true) ||
+                url.contains(".mp3", ignoreCase = true) ||
+                url.contains(".wav", ignoreCase = true) ||
+                url.contains(".ogg", ignoreCase = true) ||
+                request.requestHeaders?.any { it.key.equals("Range", ignoreCase = true) } == true ||
+                request.requestHeaders?.any { it.key.equals("Accept", ignoreCase = true) && (it.value.contains("video/", ignoreCase = true) || it.value.contains("audio/", ignoreCase = true)) } == true ||
+                request.requestHeaders?.any { it.key.equals("Sec-Fetch-Dest", ignoreCase = true) && (it.value.equals("video", ignoreCase = true) || it.value.equals("audio", ignoreCase = true)) } == true
+
         // 3. Privacy Proxy (GET Only to avoid breaking POST forms)
-        if (request.method == "GET" && (url.startsWith("http://") || url.startsWith("https://"))) {
+        if (!isMediaRequest && request.method == "GET" && (url.startsWith("http://") || url.startsWith("https://"))) {
             try {
                 val requestHeaders = request.requestHeaders?.toMutableMap() ?: mutableMapOf()
                 
