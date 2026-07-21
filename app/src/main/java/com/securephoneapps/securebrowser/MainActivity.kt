@@ -131,6 +131,7 @@ import com.securephoneapps.securebrowser.engine.HardenedWebViewClient
 import com.securephoneapps.securebrowser.engine.ShieldsCoreEngine
 import com.securephoneapps.securebrowser.ui.AdvancedTabManagerScreen
 import com.securephoneapps.securebrowser.ui.GranularControlSettingsScreen
+import com.securephoneapps.securebrowser.ui.SecureDownloadsVaultScreen
 import com.securephoneapps.securebrowser.viewmodel.BrowserStateViewModel
 import android.webkit.DownloadListener
 import androidx.compose.runtime.rememberCoroutineScope
@@ -351,6 +352,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 GranularControlSettingsScreen(
                                     viewModel = viewModel,
                                     onBack = { viewModel.navigateTo(BrowserStateViewModel.Screen.Browser) }
+                                )
+                            }
+                            BrowserStateViewModel.Screen.Downloads -> {
+                                SecureDownloadsVaultScreen(
+                                    viewModel = viewModel,
+                                    onClose = { viewModel.navigateTo(BrowserStateViewModel.Screen.Browser) }
                                 )
                             }
                         }
@@ -1169,9 +1176,7 @@ fun BrowserWorkspaceScreen(
 
                 IconButton(
                     onClick = {
-                        // Open Secure Vault Downloads in Settings
-                        viewModel.navigateTo(BrowserStateViewModel.Screen.Settings)
-                        // Note: We'll ensure the Downloads section is visible or scrolled to in the next step
+                        viewModel.navigateTo(BrowserStateViewModel.Screen.Downloads)
                     },
                     modifier = Modifier.testTag("nav_downloads")
                 ) {

@@ -27,7 +27,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import android.content.Intent
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.os.Environment
+import android.os.Build
+import android.webkit.MimeTypeMap
 import java.io.File
+import java.io.FileInputStream
+import java.io.OutputStream
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.net.URI
@@ -76,7 +83,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val activeTabId: StateFlow<String?> = _activeTabId.asStateFlow()
 
     // Screen State Navigation
-    enum class Screen { Browser, TabManager, Settings }
+    enum class Screen { Browser, TabManager, Settings, Downloads }
     private val _currentScreen = MutableStateFlow(Screen.Browser)
     val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
 
@@ -117,21 +124,55 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun exportFileToPublicStorage(context: android.content.Context, file: java.io.File) {
-        try {
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
-            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                type = context.contentResolver.getType(uri) ?: "*/*"
-                putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(android.content.Intent.createChooser(intent, "Export Secure File"))
-        } catch (e: Exception) {
-            viewModelScope.launch(Dispatchers.Main) {
-                android.widget.Toast.makeText(context, "Export failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val extension = MimeTypeMap.getFileExtensionFromUrl(file.absolutePath)
+                val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
+                
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val subDir = if (mimeType.startsWith("image/")) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, "$subDir/SecureBrowserDownloads")
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+                }
+
+                val collectionUri = if (mimeType.startsWith("image/")) {
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                } else {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                    } else {
+                        // Fallback for older versions if needed, but MediaStore.Downloads is Q+
+                        // For simplicity in this "Secure Browser" context, we'll use a generic approach or assume modern OS
+                        MediaStore.Files.getContentUri("external")
+                    }
+                }
+
+                val uri = context.contentResolver.insert(collectionUri, values)
+                if (uri != null) {
+                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        FileInputStream(file).use { inputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        values.clear()
+                        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                        context.contentResolver.update(uri, values, null, null)
+                    }
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "Asset successfully exported to public storage", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    throw Exception("Failed to create MediaStore entry")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Export failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
