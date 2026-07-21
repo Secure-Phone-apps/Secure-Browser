@@ -400,6 +400,14 @@ class ShieldsCoreEngine {
     }
 
     /**
+     * High-speed malicious domain analyzer check.
+     */
+    fun isMaliciousHost(host: String): Boolean {
+        // Evaluate host against known blocklists and heuristic patterns
+        return shouldBlock("https://$host")
+    }
+
+    /**
      * Generates a structural blank response with zeroed byte arrays to prevent page loading timeouts.
      */
     fun generateBlankResponse(): WebResourceResponse {

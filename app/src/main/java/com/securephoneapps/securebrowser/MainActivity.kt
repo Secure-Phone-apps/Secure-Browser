@@ -4,10 +4,15 @@ import android.annotation.SuppressLint
 import android.os.Bundle
 import android.os.Build
 import android.app.role.RoleManager
-import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Context
+import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.content.Intent
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -116,14 +121,9 @@ import com.securephoneapps.securebrowser.engine.ShieldsCoreEngine
 import com.securephoneapps.securebrowser.ui.AdvancedTabManagerScreen
 import com.securephoneapps.securebrowser.ui.GranularControlSettingsScreen
 import com.securephoneapps.securebrowser.viewmodel.BrowserStateViewModel
-import android.widget.Toast
 import android.webkit.DownloadListener
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -135,8 +135,6 @@ import javax.crypto.spec.GCMParameterSpec
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
-
-import android.content.Context
 import android.print.PrintManager
 
 class MainActivity : androidx.fragment.app.FragmentActivity() {
@@ -178,8 +176,22 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
     }
 
-    private val roleRequestLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
+    private fun requestBrowserRole() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
+            if (roleManager.isRoleAvailable(RoleManager.ROLE_BROWSER) && !roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
+                @Suppress("DEPRECATION")
+                startActivityForResult(intent, 1001)
+            }
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 1001 && resultCode == RESULT_OK) {
             Toast.makeText(this, "Secure Browser is now your default", Toast.LENGTH_SHORT).show()
         }
     }
@@ -188,16 +200,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // NATIVE BROWSER ROLE REQUEST (Stability Fix: Defer until after resume to avoid 16-bit crash)
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
-                    if (roleManager.isRoleAvailable(RoleManager.ROLE_BROWSER) && !roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
-                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
-                        roleRequestLauncher.launch(intent)
-                    }
-                }
+        // NATIVE BROWSER ROLE REQUEST (Stability Fix: Execute once after startup)
+        if (savedInstanceState == null) {
+            lifecycleScope.launch {
+                delay(2000)
+                requestBrowserRole()
             }
         }
 
@@ -563,11 +570,18 @@ class SecureContainerDownloadListener(
 
                     if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                         val fileName = getFileName(url, contentDisposition, mimetype)
+                        // STORAGE SANDBOX HARDENING: Ensure private, isolated path strictly under app-specific data root
                         val downloadsDir = File(context.noBackupFilesDir, "secure_downloads")
                         if (!downloadsDir.exists()) {
                             downloadsDir.mkdirs()
                         }
+                        
                         val outputFile = File(downloadsDir, fileName)
+                        // Security Verification: Destination must be within the secure sandbox
+                        if (!outputFile.canonicalPath.startsWith(context.noBackupFilesDir.canonicalPath)) {
+                            throw SecurityException("Malicious path escape detected")
+                        }
+                        
                         if (outputFile.exists()) {
                             outputFile.delete()
                         }

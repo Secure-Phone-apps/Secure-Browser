@@ -261,12 +261,8 @@ class HardenedWebViewClient(
     }
 
     private fun isMalicious(host: String): Boolean {
-        val maliciousPatterns = listOf(
-            "phishing", "malware", "deceptive", "scam-", "-login-update",
-            "verify-account", "secure-bank-login", "bit.ly/malicious",
-            "suspicious-redirect", "malvertising"
-        )
-        return maliciousPatterns.any { host.contains(it, ignoreCase = true) }
+        // Deep Network Verification: Evaluate host against shields engine intelligence
+        return shieldsEngine.isMaliciousHost(host)
     }
 
     private fun generateSecurityWarningResponse(): WebResourceResponse {
