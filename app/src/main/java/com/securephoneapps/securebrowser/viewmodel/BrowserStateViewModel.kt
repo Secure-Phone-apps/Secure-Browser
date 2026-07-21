@@ -669,47 +669,45 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    // Zero-Lag Active Memory Cache Matrix: Shunt transactional persistence to IO threads
     fun updateActiveTabUrl(url: String, title: String) {
-        val activeId = _activeTabId.value ?: return
-        val currentTab = _tabsState.value.find { it.tabId == activeId } ?: return
-        
+        val tabId = activeTabId.value ?: return
+        val currentTabs = _tabsState.value
+        val tab = currentTabs.find { it.tabId == tabId } ?: return
+
         // ENFORCE STORAGE ISOLATION
         // When an existing tab instance changes its primary domain host, clear DOM storage.
-        val oldHost = extractHost(currentTab.currentUrl)
+        val oldHost = extractHost(tab.currentUrl)
         val newHost = extractHost(url)
         if (oldHost != null && newHost != null && oldHost != newHost) {
             viewModelScope.launch(Dispatchers.Main) {
                 try {
-                    android.webkit.WebStorage.getInstance().deleteOrigin(oldHost)
+                    val storage = android.webkit.WebStorage.getInstance()
+                    storage.deleteOrigin(oldHost)
+                    storage.deleteOrigin("https://$oldHost")
+                    storage.deleteOrigin("http://$oldHost")
                 } catch (e: Exception) {}
-                try {
-                    android.webkit.WebStorage.getInstance().deleteOrigin("https://$oldHost")
-                } catch (e: Exception) {}
-                try {
-                    android.webkit.WebStorage.getInstance().deleteOrigin("http://$oldHost")
-                } catch (e: Exception) {}
-                WebStorage.getInstance().deleteAllData()
-                CookieManager.getInstance().flush()
             }
         }
 
-        viewModelScope.launch {
-            val updated = currentTab.copy(
-                currentUrl = url,
-                pageTitle = title,
-                lastActiveTimestamp = System.currentTimeMillis()
-            )
-            repository.insertTab(updated)
+        // Instantaneous Memory Update (UI-Bound)
+        val updatedTab = tab.copy(currentUrl = url, pageTitle = title, lastActiveTimestamp = System.currentTimeMillis())
+        _tabsState.value = currentTabs.map { if (it.tabId == tabId) updatedTab else it }
 
-            // Add to history if not incognito and not about:blank
-            if (!currentTab.isIncognito && url != "about:blank" && url.isNotBlank()) {
-                repository.insertHistory(
-                    HistoryItem(
-                        url = url,
-                        title = title,
-                        timestamp = System.currentTimeMillis()
+        // Background Persistence Shunt
+        viewModelScope.launch(Dispatchers.IO) {
+            databaseMutex.withLock {
+                repository.insertTab(updatedTab)
+                // Add to history if not incognito and not about:blank
+                if (!tab.isIncognito && url != "about:blank" && url.isNotBlank()) {
+                    repository.insertHistory(
+                        HistoryItem(
+                            url = url,
+                            title = title,
+                            timestamp = System.currentTimeMillis()
+                        )
                     )
-                )
+                }
             }
         }
     }
@@ -959,7 +957,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
 
     // Tab Grouping Matrix Ops
     fun createTabGroup(name: String, colorHex: String): String {
-        val id = UUID.randomUUID().toString()
+        val id = java.util.UUID.randomUUID().toString()
         viewModelScope.launch {
             repository.insertGroup(TabGroup(groupId = id, groupName = name, hexColorBadge = colorHex))
         }
@@ -972,6 +970,40 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             repository.insertTab(tab.copy(parentGroupId = groupId))
         }
     }
+    /**
+     * Resiliently handles Chromium rendering engine process crashes.
+     * Silently disposes of faulted view references and reconstructs the layout from serialized state.
+     */
+    fun handleRenderProcessCrash(webView: WebView?) {
+        val tabId = webView?.tag as? String ?: return
+        val tab = _tabsState.value.find { it.tabId == tabId } ?: return
+        
+        // Trap the error and dispose faulted view reference on UI thread
+        viewModelScope.launch(Dispatchers.Main) {
+            try {
+                webView?.stopLoading()
+                webView?.clearHistory()
+                webView?.destroy()
+            } catch (e: Exception) {}
+            
+            // Instantly reconstruct context from Room persistence blob
+            val stateBytes = tab.serializedEngineState
+            if (stateBytes != null) {
+                // The UI will naturally re-instantiate the WebView due to state changes
+                // or we can force a 'restore' flag if needed. 
+                // For this implementation, we just mark the tab for refresh.
+                val refreshed = tab.copy(isSuspendedState = true) // Shunt to hibernation temporarily for clean recovery
+                withContext(Dispatchers.IO) {
+                    repository.insertTab(refreshed)
+                }
+                
+                // Trigger wake-up sequence to force fresh initialization
+                delay(300)
+                wakeUpTab(tabId)
+            }
+        }
+    }
+
 
     fun removeGroup(groupId: String) {
         viewModelScope.launch {

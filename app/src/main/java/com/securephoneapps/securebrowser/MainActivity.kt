@@ -95,9 +95,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.animation.core.*
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -1068,12 +1078,21 @@ fun BrowserWorkspaceScreen(
 
             // Ensure the linear Jetpack Compose progress indicator bar only recomposes when progress is between 1 and 99, and completely sets visibility to gone when it reaches 100 to save rendering cycles.
             val progress by viewModel.pageLoadingProgress.collectAsState()
-            if (progress in 1..99) {
+            val activeThemeColor by viewModel.activePageThemeColor.collectAsState()
+            
+            // Dynamically adapt color based on page theme or fallback to premium blue
+            val progressColor = if (!activeThemeColor.isNullOrBlank()) {
+                try { Color(android.graphics.Color.parseColor(activeThemeColor)) } catch (e: Exception) { Color(0xFF2563EB) }
+            } else {
+                Color(0xFF2563EB)
+            }
+
+            if (isLoading && progress < 100) {
                 androidx.compose.material3.LinearProgressIndicator(
-                    progress = progress / 100f,
-                    modifier = Modifier.fillMaxWidth().height(3.dp),
-                    color = Color(0xFF2563EB),
-                    trackColor = Color(0xFFE2E8F0)
+                    progress = { progress / 100f },
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = progressColor,
+                    trackColor = Color.Transparent
                 )
             }
         }
@@ -1468,11 +1487,52 @@ fun BrowserWorkspaceScreen(
 }
 
 @Composable
+fun FrostedGlassContainer(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
+        label = "scale"
+    )
+    val haptic = LocalHapticFeedback.current
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        when (event.type) {
+                            PointerEventType.Press -> {
+                                isPressed = true
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
+                            PointerEventType.Release -> {
+                                isPressed = false
+                            }
+                        }
+                    }
+                }
+            }
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.07f))
+            .border(width = 1.dp, color = Color.White.copy(alpha = 0.15f), shape = RoundedCornerShape(16.dp))
+            .padding(12.dp)
+    ) {
+        content()
+    }
+}
+
+@Composable
 fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
     val telemetry by viewModel.shieldTelemetry.collectAsState()
-    val bookmarks by viewModel.bookmarks.collectAsState()
-    val history by viewModel.history.collectAsState()
     val proxyDiagnosticState by viewModel.proxyDiagnosticState.collectAsState()
+    val history by viewModel.history.collectAsState()
+    val bookmarks by viewModel.bookmarks.collectAsState()
 
     val quickLaunchTiles = listOf(
         "DuckDuckGo" to "https://duckduckgo.com",
@@ -1483,306 +1543,225 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
         "Tor Project" to "https://torproject.org"
     )
 
+    // Smoothly animated background gradient brush
+    val infiniteTransition = rememberInfiniteTransition(label = "gradient")
+    val gradientOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(15000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "offset"
+    )
+    
+    val cyberpunkGradient = Brush.linearGradient(
+        colors = listOf(Color(0xFF090D16), Color(0xFF1E1B4B), Color(0xFF090D16)),
+        start = Offset(gradientOffset, 0f),
+        end = Offset(gradientOffset + 1200f, 1200f)
+    )
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF090D16)) // Custom deep dark midnight background
+            .background(cyberpunkGradient)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         // Hero Brand Shield
         item {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(
                     imageVector = Icons.Default.Shield,
                     contentDescription = null,
-                    tint = Color(0xFF10B981), // Emerald 500
-                    modifier = Modifier.size(56.dp)
+                    tint = Color(0xFF10B981),
+                    modifier = Modifier.size(64.dp)
                 )
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "SECURE BROWSER",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Black,
                     color = Color.White,
-                    letterSpacing = (-0.5).sp,
-                    fontFamily = FontFamily.SansSerif
+                    letterSpacing = (-0.5).sp
                 )
                 Text(
                     text = "HARDENED SANDBOX SHELL ACTIVE",
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF10B981), // Emerald 500
-                    letterSpacing = 1.sp
+                    color = Color(0xFF10B981),
+                    letterSpacing = 2.sp
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .background(Color(0xFF1E293B).copy(alpha = 0.6f), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .background(
-                                color = if (proxyDiagnosticState.startsWith("Tunnel Active")) Color(0xFF10B981) else if (proxyDiagnosticState == "Checking...") Color(0xFFF59E0B) else Color(0xFFEF4444),
-                                shape = RoundedCornerShape(50.dp)
-                            )
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Proxy: $proxyDiagnosticState",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF94A3B8)
-                    )
+                Spacer(modifier = Modifier.height(12.dp))
+                FrostedGlassContainer {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(
+                                    color = if (proxyDiagnosticState.startsWith("Tunnel Active")) Color(0xFF10B981) else if (proxyDiagnosticState == "Checking...") Color(0xFFF59E0B) else Color(0xFFEF4444),
+                                    shape = CircleShape
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Proxy: $proxyDiagnosticState",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8)
+                        )
+                    }
                 }
             }
         }
 
-        // Blocking Statistics: Dark Theme Grid Style
+        // Blocking Statistics: Frosted Card Grid
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Card 1: Trackers
-                Card(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(100.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)), // Slate 800
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = (telemetry?.trackersBlockedGlobal ?: 0L).toString(),
-                            color = Color(0xFF10B981), // Emerald Green
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Trackers Dropped",
-                            color = Color(0xFF94A3B8), // Slate 400
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-
-                // Card 2: Canvas Fakes
-                Card(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(100.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = (telemetry?.canvasFakesTriggered ?: 0L).toString(),
-                            color = Color(0xFF3B82F6), // Blue 500
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Canvas Fakes",
-                            color = Color(0xFF94A3B8), // Slate 400
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-
-                // Card 3: Fingerprints Distorted
-                Card(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(100.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = (telemetry?.fingerprintMocksTriggered ?: 0L).toString(),
-                            color = Color(0xFF818CF8), // Light Indigo
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Fingerprints",
-                            color = Color(0xFF94A3B8), // Slate 400
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-        }
-
-        // Quick Launch Grid
-        item {
-            Column {
-                Text(
-                    text = "SECURE QUICK LAUNCH",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color(0xFF94A3B8), // Slate 400
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                val stats = listOf(
+                    Triple((telemetry?.trackersBlockedGlobal ?: 0L).toString(), "Trackers Dropped", Color(0xFF10B981)),
+                    Triple((telemetry?.canvasFakesTriggered ?: 0L).toString(), "Canvas Fakes", Color(0xFF3B82F6)),
+                    Triple((telemetry?.fingerprintMocksTriggered ?: 0L).toString(), "Fingerprints", Color(0xFF818CF8))
                 )
 
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.height(118.dp)
-                ) {
-                    items(quickLaunchTiles) { (title, url) ->
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .border(width = 1.dp, color = Color(0xFF334155), shape = RoundedCornerShape(12.dp))
-                                .clickable { viewModel.updateActiveTabUrl(url, title) }
-                                .height(52.dp)
+                stats.forEach { (value, label, color) ->
+                    FrostedGlassContainer(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = title,
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Private Bookmarks
-        if (bookmarks.isNotEmpty()) {
-            item {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "SECURE BOOKMARKS",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Black,
-                            color = Color(0xFF94A3B8), // Slate 400
-                            letterSpacing = 1.sp
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    bookmarks.take(4).forEach { bmk ->
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .border(width = 1.dp, color = Color(0xFF334155), shape = RoundedCornerShape(12.dp))
-                                .clickable { viewModel.updateActiveTabUrl(bmk.url, bmk.title) }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(bmk.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(bmk.url, color = Color(0xFF94A3B8), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                                IconButton(onClick = { viewModel.deleteBookmark(bmk.id) }, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Default.Close, contentDescription = "Delete Bookmark", tint = Color(0xFF94A3B8), modifier = Modifier.size(14.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Recent Sessions History
-        if (history.isNotEmpty()) {
-            item {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.History, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "RECENT SESSION LOGS",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Black,
-                                color = Color(0xFF94A3B8), // Slate 400
-                                letterSpacing = 1.sp
+                                text = value,
+                                color = color,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = label,
+                                color = Color(0xFF94A3B8),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
                             )
                         }
-                        Text(
-                            text = "Clear History",
-                            color = Color(0xFFFF453A),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.clickable { viewModel.clearHistory() }
-                        )
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    history.take(4).forEach { hist ->
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                            shape = RoundedCornerShape(12.dp),
+                }
+            }
+        }
+
+        // Quick Launch Grid (Bookmarks)
+        item {
+            Text(
+                text = "PINNED BOOKMARKS",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Black,
+                color = Color.White.copy(alpha = 0.5f),
+                letterSpacing = 1.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            
+            val displayTiles = if (bookmarks.isNotEmpty()) {
+                bookmarks.take(6).map { it.title to it.url }
+            } else {
+                quickLaunchTiles
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                displayTiles.chunked(2).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { (name, url) ->
+                            FrostedGlassContainer(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { viewModel.updateActiveTabUrl(url, name) }
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.Bookmark,
+                                        contentDescription = null,
+                                        tint = Color(0xFF10B981).copy(alpha = 0.8f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = name,
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+
+        // Recent Activity History
+        if (history.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "RECENT SESSION LOGS",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White.copy(alpha = 0.5f),
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = "Wipe Logs",
+                        color = Color(0xFFFF453A),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { viewModel.clearHistory() }
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    history.take(4).forEach { log ->
+                        FrostedGlassContainer(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .border(width = 1.dp, color = Color(0xFF334155), shape = RoundedCornerShape(12.dp))
-                                .clickable { viewModel.updateActiveTabUrl(hist.url, hist.title) }
+                                .clickable { viewModel.updateActiveTabUrl(log.url, log.title) }
                         ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.History,
+                                    contentDescription = null,
+                                    tint = Color(0xFF3B82F6).copy(alpha = 0.8f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
                                 Column {
-                                    Text(hist.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(hist.url, color = Color(0xFF94A3B8), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        text = log.title.ifBlank { "Untitled Page" },
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = log.url,
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                         }
@@ -1790,5 +1769,9 @@ fun BravePrivacyDashboard(viewModel: BrowserStateViewModel) {
                 }
             }
         }
+        
+        item { Spacer(modifier = Modifier.height(40.dp)) }
     }
 }
+
+

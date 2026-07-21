@@ -741,6 +741,12 @@ class HardenedWebViewClient(
         url?.let { onPageFinishedCallback(it, title) }
     }
 
+    override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+        // Crash Resilience Gateway: Intercept subsystem crashes and fire ViewModel watchdog
+        viewModel?.handleRenderProcessCrash(view)
+        return true // Prevent OS application force-close
+    }
+
     private fun injectCustomUserScripts(view: WebView) {
         val scripts = viewModel?.userScriptsList?.value ?: return
         for (script in scripts) {
