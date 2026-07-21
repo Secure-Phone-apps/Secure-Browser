@@ -92,18 +92,17 @@ class HardenedWebViewClient(
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
         val url = request?.url?.toString() ?: return null
         
-        // PDF path validation block
+        // 1. PDF path validation block
         if (url.contains("viewer.html", ignoreCase = true) || url.contains("pdfjs", ignoreCase = true)) {
             if (!url.startsWith("file:///android_asset/pdfjs/")) {
                 return WebResourceResponse("text/plain", "UTF-8", "Blocked: PDF viewer must load strictly from local app resources.".byteInputStream())
             }
         }
         
-        // PHISHING & MALWARE FIREWALL INTERCEPTION
-        // High-speed malicious domain analyzer check
+        // 2. PHISHING & MALWARE FIREWALL INTERCEPTION
         val host = request.url.host ?: ""
         if (isMalicious(host)) {
-            return shieldsEngine.generateBlankResponse()
+            return generateSecurityWarningResponse()
         }
 
         if (shieldsEngine.shouldBlock(url)) {
@@ -111,15 +110,30 @@ class HardenedWebViewClient(
             return shieldsEngine.generateBlankResponse()
         }
 
-        // REFERRER STRIPPING INTERCEPTION LOOP
-        if (url.startsWith("http://") || url.startsWith("https://")) {
+        // 3. Privacy Proxy (GET Only to avoid breaking POST forms)
+        if (request.method == "GET" && (url.startsWith("http://") || url.startsWith("https://"))) {
             try {
                 val requestHeaders = request.requestHeaders?.toMutableMap() ?: mutableMapOf()
+                
+                // Stripping specific privacy-leaking headers
                 val refererKeys = requestHeaders.keys.filter { it.equals("Referer", ignoreCase = true) }
                 for (key in refererKeys) {
                     requestHeaders.remove(key)
                 }
                 requestHeaders["Referer"] = "no-referrer"
+
+                // De-Googling header stripping
+                if (viewModel?.deGooglingTelemetryEnabled?.value == true) {
+                    val googleSpecificHeaders = listOf(
+                        "X-Client-Data", "X-Google-GFE-Backend-Request-Cost",
+                        "X-Goog-Encode-Response-If-Executable", "X-Goog-Visitor-Id",
+                        "X-Youtube-Client-Name", "X-Youtube-Client-Version"
+                    )
+                    googleSpecificHeaders.forEach { headerName ->
+                        val keys = requestHeaders.keys.filter { it.equals(headerName, ignoreCase = true) }
+                        keys.forEach { requestHeaders.remove(it) }
+                    }
+                }
 
                 // Synchronize User-Agent Client Hints to prevent fingerprint mismatches
                 val userAgent = view?.settings?.userAgentString ?: ""
@@ -154,6 +168,13 @@ class HardenedWebViewClient(
                 val connectionUrl = java.net.URL(url)
                 val connection = connectionUrl.openConnection() as java.net.HttpURLConnection
                 connection.requestMethod = request.method
+                
+                // Cookie Synchronization: ensure the privacy proxy maintains session state
+                val cookieManager = android.webkit.CookieManager.getInstance()
+                val cookies = cookieManager.getCookie(url)
+                if (cookies != null) {
+                    connection.addRequestProperty("Cookie", cookies)
+                }
                 
                 val obfuscatedHeaders = shieldsEngine.obfuscateHeaderSequence(requestHeaders)
                 for ((key, value) in obfuscatedHeaders) {
@@ -230,7 +251,7 @@ class HardenedWebViewClient(
             val uri = android.net.Uri.parse(url)
             val host = uri.host ?: ""
             if (isMalicious(host)) {
-                return shieldsEngine.generateBlankResponse()
+                return generateSecurityWarningResponse()
             }
             if (shieldsEngine.shouldBlock(url)) {
                 onTrackerBlocked(url)
@@ -242,6 +263,14 @@ class HardenedWebViewClient(
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val url = request?.url?.toString() ?: return false
+        
+        // HTTPS-Only Upgrade
+        if (viewModel?.httpsOnlyMode?.value == true && url.startsWith("http://")) {
+            val secureUrl = url.replaceFirst("http://", "https://")
+            view?.loadUrl(secureUrl)
+            return true
+        }
+
         if (url.startsWith("http://") || url.startsWith("https://")) {
             return false
         }
@@ -300,336 +329,9 @@ class HardenedWebViewClient(
     }
 
     private fun getFingerprintInjectionScript(): String {
-        val audioActive = isAudioShieldActive()
-        return """
-        (function() {
-            try {
-                // 1. Webdriver masking - clean reCAPTCHA natural override
-                delete navigator.__proto__.webdriver;
-
-                // WebRTC Isolation & IP leak prevention
-                if (window.RTCPeerConnection || window.webkitRTCPeerConnection) {
-                    if (window.FingerprintShield) {
-                        window.FingerprintShield.onFingerprintMockTriggered("webrtc");
-                    }
-                    try {
-                        Object.defineProperty(window, 'RTCPeerConnection', { value: undefined, writable: false });
-                        Object.defineProperty(window, 'webkitRTCPeerConnection', { value: undefined, writable: false });
-                        Object.defineProperty(window, 'RTCIceCandidate', { value: undefined, writable: false });
-                        Object.defineProperty(window, 'RTCSessionDescription', { value: undefined, writable: false });
-                    } catch (webrtcErr) {}
-                }
-
-                // 2. Canvas Fingerprint protection via slight noise injection
-                if (HTMLCanvasElement.prototype.getContext) {
-                    const orgGetContext = HTMLCanvasElement.prototype.getContext;
-                    HTMLCanvasElement.prototype.getContext = function(type) {
-                        const ctx = orgGetContext.apply(this, arguments);
-                        if (ctx && type === '2d') {
-                            const orgGetImageData = ctx.getImageData;
-                            ctx.getImageData = function(x, y, w, h) {
-                                const imgData = orgGetImageData.apply(this, arguments);
-                                if (imgData && imgData.data && imgData.data.length >= 16) {
-                                    // Inject consistent shift into the last pixel quadrant during heavy operations
-                                    const len = imgData.data.length;
-                                    const lastPixelIdx = len - 4;
-                                    imgData.data[lastPixelIdx] = (imgData.data[lastPixelIdx] + 1) % 256;
-                                }
-                                if (window.FingerprintShield) {
-                                    window.FingerprintShield.onCanvasFakeTriggered();
-                                }
-                                return imgData;
-                            };
-                        }
-                        return ctx;
-                    };
-                }
-
-                // Canvas blending fillText opacity shift
-                if (window.CanvasRenderingContext2D) {
-                    const orgFillText = CanvasRenderingContext2D.prototype.fillText;
-                    CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
-                        const originalAlpha = this.globalAlpha;
-                        const variance = 0.00001;
-                        this.globalAlpha = Math.max(0, originalAlpha - variance);
-                        const res = orgFillText.apply(this, arguments);
-                        this.globalAlpha = originalAlpha;
-                        return res;
-                    };
-                }
-
-
-
-                // 3. WebGL GPU and Vendor virtualization fakes
-                if (window.WebGLRenderingContext) {
-                    const orgGetParameter = WebGLRenderingContext.prototype.getParameter;
-                    WebGLRenderingContext.prototype.getParameter = function(pname) {
-                        // UNMASKED_VENDOR_WEBGL (0x9245) or UNMASKED_RENDERER_WEBGL (0x9246)
-                        if (pname === 37445) {
-                            if (window.FingerprintShield) window.FingerprintShield.onFingerprintMockTriggered("webgl_vendor");
-                            return "Google Inc.";
-                        }
-                        if (pname === 37446) {
-                            if (window.FingerprintShield) window.FingerprintShield.onFingerprintMockTriggered("webgl_renderer");
-                            return "Google SwiftShader";
-                        }
-                        return orgGetParameter.apply(this, arguments);
-                    };
-                }
-                const hookWebGLGetExtension = (proto) => {
-                    if (proto && proto.getExtension) {
-                        const orgGetExtension = proto.getExtension;
-                        proto.getExtension = function(name) {
-                            if (name && (name.indexOf('WEBGL_debug_renderer_info') !== -1 || name.toLowerCase().indexOf('renderer_info') !== -1)) {
-                                if (window.FingerprintShield) window.FingerprintShield.onFingerprintMockTriggered("webgl_extension_blocked");
-                                return null;
-                            }
-                            return orgGetExtension.apply(this, arguments);
-                        };
-                    }
-                };
-                if (window.WebGLRenderingContext) {
-                    hookWebGLGetExtension(WebGLRenderingContext.prototype);
-                }
-                if (window.WebGL2RenderingContext) {
-                    hookWebGLGetExtension(WebGL2RenderingContext.prototype);
-                }
-
-                // 4. Audio API protection fakes
-                if ($audioActive) {
-                    if (window.AudioContext) {
-                        const orgCreateAnalyser = AudioContext.prototype.createAnalyser;
-                        AudioContext.prototype.createAnalyser = function() {
-                            const analyser = orgCreateAnalyser.apply(this, arguments);
-                            try {
-                                const orgGetByteFrequencyData = analyser.getByteFrequencyData;
-                                analyser.getByteFrequencyData = function(array) {
-                                    const res = orgGetByteFrequencyData.apply(this, arguments);
-                                    for (let i = 0; i < array.length; i++) {
-                                        array[i] = Math.max(0, Math.min(255, array[i] + (Math.random() * 2 - 1) * 0.00001));
-                                    }
-                                    return res;
-                                };
-                            } catch (e) {}
-                            return analyser;
-                        };
-                    }
-                    if (window.OfflineAudioContext) {
-                        const orgCreateAnalyser = OfflineAudioContext.prototype.createAnalyser;
-                        if (orgCreateAnalyser) {
-                            OfflineAudioContext.prototype.createAnalyser = function() {
-                                const analyser = orgCreateAnalyser.apply(this, arguments);
-                                try {
-                                    const orgGetByteFrequencyData = analyser.getByteFrequencyData;
-                                    analyser.getByteFrequencyData = function(array) {
-                                        const res = orgGetByteFrequencyData.apply(this, arguments);
-                                        for (let i = 0; i < array.length; i++) {
-                                            array[i] = Math.max(0, Math.min(255, array[i] + (Math.random() * 2 - 1) * 0.00001));
-                                        }
-                                        return res;
-                                    };
-                                } catch (e) {}
-                                return analyser;
-                            };
-                        }
-                    }
-                    if (window.AudioBuffer) {
-                        const orgGetChannelData = AudioBuffer.prototype.getChannelData;
-                        AudioBuffer.prototype.getChannelData = function() {
-                            const data = orgGetChannelData.apply(this, arguments);
-                            if (data && data.length > 0) {
-                                // Inject minor sound noise float to distort canvas sound fingerprinters
-                                for (let i = 0; i < Math.min(data.length, 100); i++) {
-                                    data[i] = data[i] + (Math.random() * 0.00002 - 0.00001);
-                                }
-                            }
-                            if (window.FingerprintShield) {
-                                window.FingerprintShield.onFingerprintMockTriggered("audio");
-                            }
-                            return data;
-                        };
-                    }
-                }
-
-                // 5. Battery profiling isolation
-                const fakeBattery = function() {
-                    if (window.FingerprintShield) {
-                        window.FingerprintShield.onFingerprintMockTriggered("battery");
-                    }
-                    return Promise.resolve({
-                        charging: true,
-                        chargingTime: 0,
-                        dischargingTime: Infinity,
-                        level: 1.0,
-                        onchargingchange: null,
-                        onchargingtimechange: null,
-                        ondischargingtimechange: null,
-                        onlevelchange: null
-                    });
-                };
-                Object.defineProperty(navigator, 'getBattery', {
-                    value: fakeBattery,
-                    writable: true,
-                    configurable: true,
-                    enumerable: true
-                });
-                if (typeof Navigator !== 'undefined' && Navigator.prototype) {
-                    Object.defineProperty(Navigator.prototype, 'getBattery', {
-                        value: fakeBattery,
-                        writable: true,
-                        configurable: true,
-                        enumerable: true
-                    });
-                }
-
-                // 6. Language & Localization Masking
-                Object.defineProperty(navigator, 'language', { get: () => 'en-US' });
-                Object.defineProperty(navigator, 'languages', { get: () => ['en-US'] });
-                
-                // 7. Time Zone Masking
-                const orgResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
-                Intl.DateTimeFormat.prototype.resolvedOptions = function() {
-                    const options = orgResolvedOptions.apply(this, arguments);
-                    return { ...options, timeZone: 'UTC' };
-                };
-
-                // 8. Motion Sensor Cloaking
-                const zeroEvent = {
-                    alpha: 0, beta: 0, gamma: 0,
-                    absolute: false,
-                    acceleration: { x: 0, y: 0, z: 0 },
-                    accelerationIncludingGravity: { x: 0, y: 0, z: 0 },
-                    rotationRate: { alpha: 0, beta: 0, gamma: 0 },
-                    interval: 16
-                };
-                window.DeviceOrientationEvent = function() { return zeroEvent; };
-                window.DeviceMotionEvent = function() { return zeroEvent; };
-
-                // 9. WebRTC Media Device Masking
-                if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-                    const orgEnumerateDevices = navigator.mediaDevices.enumerateDevices;
-                    navigator.mediaDevices.enumerateDevices = function() {
-                        return orgEnumerateDevices.apply(this, arguments).then(devices => {
-                            return devices.map(device => {
-                                let label = "Standard Device";
-                                if (device.kind === 'audioinput') label = "Standard Microphone Input";
-                                if (device.kind === 'audiooutput') label = "Standard Speaker Output";
-                                if (device.kind === 'videoinput') label = "Default Rear Camera";
-                                
-                                return {
-                                    deviceId: "default",
-                                    kind: device.kind,
-                                    label: label,
-                                    groupId: "default"
-                                };
-                            });
-                        });
-                    };
-                }
-
-                // 10. Web Crypto API Spoofing
-                if (window.crypto && window.crypto.subtle && window.crypto.subtle.generateKey) {
-                    const orgGenerateKey = window.crypto.subtle.generateKey;
-                    window.crypto.subtle.generateKey = function(algorithm, extractable, keyUsages) {
-                        if (window.FingerprintShield) {
-                            window.FingerprintShield.onFingerprintMockTriggered("webcrypto");
-                        }
-                        // Inject small metadata variation in the algorithm object to randomize analytic entity key-gen fingerprint entropy
-                        const modifiedAlgorithm = typeof algorithm === 'string' ? algorithm : { ...algorithm, length: algorithm.length || 256, salt: new Uint8Array([Math.floor(Math.random() * 256)]) };
-                        return orgGenerateKey.call(this, modifiedAlgorithm, extractable, keyUsages);
-                    };
-                }
-
-                // 11. Force Sans-Serif Font Rendering Substitution to Defeat Font Enumeration Fingerprinting
-                const injectGlobalFontSubstitution = () => {
-                    const style = document.createElement('style');
-                    style.id = 'font-scrambler-override';
-                    style.textContent = 'body, html, * { font-family: sans-serif !important; }';
-                    if (document.head) {
-                        document.head.appendChild(style);
-                    } else if (document.documentElement) {
-                        document.documentElement.appendChild(style);
-                    }
-                };
-                injectGlobalFontSubstitution();
-                document.addEventListener('DOMContentLoaded', injectGlobalFontSubstitution);
-
-                // 12. Background video playback & visibility event neutralization
-                const handleVisibility = (e) => {
-                    e.stopImmediatePropagation();
-                };
-                document.addEventListener('visibilitychange', handleVisibility, true);
-                document.addEventListener('webkitvisibilitychange', handleVisibility, true);
-                Object.defineProperty(document, 'visibilityState', {
-                    get: () => 'visible',
-                    configurable: true
-                });
-                Object.defineProperty(document, 'hidden', {
-                    get: () => false,
-                    configurable: true
-                });
-
-                // 13. Clipboard security protector
-                let lastPhysicalUserInteraction = 0;
-                const recordUserInteraction = () => {
-                    lastPhysicalUserInteraction = Date.now();
-                };
-                window.addEventListener('click', recordUserInteraction, true);
-                window.addEventListener('touchstart', recordUserInteraction, true);
-                window.addEventListener('keydown', recordUserInteraction, true);
-
-                if (navigator.clipboard && navigator.clipboard.readText) {
-                    const orgReadText = navigator.clipboard.readText;
-                    navigator.clipboard.readText = function() {
-                        const timeSinceInteraction = Date.now() - lastPhysicalUserInteraction;
-                        if (timeSinceInteraction > 1000) {
-                            if (window.FingerprintShield) {
-                                window.FingerprintShield.onFingerprintMockTriggered("clipboard_access_blocked");
-                            }
-                            return Promise.reject(new DOMException("Clipboard read access denied without active physical user interaction.", "NotAllowedError"));
-                        }
-                        return orgReadText.apply(this, arguments);
-                    };
-                }
-
-                document.addEventListener('paste', (e) => {
-                    const timeSinceInteraction = Date.now() - lastPhysicalUserInteraction;
-                    if (timeSinceInteraction > 1000) {
-                        e.stopImmediatePropagation();
-                        e.preventDefault();
-                        if (window.FingerprintShield) {
-                            window.FingerprintShield.onFingerprintMockTriggered("clipboard_paste_blocked");
-                        }
-                    }
-                }, true);
-
-                // 14. Battery status virtualization
-                if (navigator.getBattery) {
-                    navigator.getBattery = function() {
-                        if (window.FingerprintShield) {
-                            window.FingerprintShield.onFingerprintMockTriggered("battery_virtualized");
-                        }
-                        return Promise.resolve({
-                            charging: true,
-                            chargingTime: 0,
-                            dischargingTime: Infinity,
-                            level: 1.0,
-                            onchargingchange: null,
-                            onchargingtimechange: null,
-                            ondischargingtimechange: null,
-                            onlevelchange: null,
-                            addEventListener: function() {},
-                            removeEventListener: function() {},
-                            dispatchEvent: function() { return true; }
-                        });
-                    };
-                }
-            } catch (e) {
-                console.error("Fingerprint shielding exception:", e);
-            }
-        })();
-        """.trimIndent()
+        return FingerprintProtector.antiFingerprintScript
     }
+
 
     private fun getDarkModeEngineScript(): String {
         return """
@@ -670,7 +372,17 @@ class HardenedWebViewClient(
                     WebViewCompat.addDocumentStartJavaScript(view, getDarkModeEngineScript(), setOf("*"))
                 }
 
-                WebViewCompat.addDocumentStartJavaScript(view, shieldsEngine.ampNeutralizerScript, setOf("*"))
+                if (viewModel?.webRtcPrivacyEnabled?.value == true) {
+                    WebViewCompat.addDocumentStartJavaScript(view, shieldsEngine.webRtcShieldScript, setOf("*"))
+                }
+
+                if (viewModel?.deAMPEnabled?.value == true) {
+                    WebViewCompat.addDocumentStartJavaScript(view, shieldsEngine.ampNeutralizerScript, setOf("*"))
+                }
+                
+                if (viewModel?.webRtcPrivacyEnabled?.value == true) {
+                    WebViewCompat.addDocumentStartJavaScript(view, shieldsEngine.webRtcShieldScript, setOf("*"))
+                }
                 registeredWebViews.add(hash)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -721,12 +433,20 @@ class HardenedWebViewClient(
         // Force-inject early scripts as a fallback if synchronous script binding is not supported
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             view?.evaluateJavascript(getFingerprintInjectionScript(), null)
-            view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
+            if (viewModel?.deAMPEnabled?.value == true) {
+                view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
+            }
+            if (viewModel?.webRtcPrivacyEnabled?.value == true) {
+                view?.evaluateJavascript(shieldsEngine.webRtcShieldScript, null)
+            }
         }
         view?.let { injectCustomUserScripts(it) }
         url?.let {
-            val cleanedUrl = cleanTrackingParameters(it)
+            val cleanedUrl = if (viewModel?.stripTrackingEnabled?.value == true) cleanTrackingParameters(it) else it
             onPageStartedCallback(cleanedUrl)
+        }
+        view?.let {
+            viewModel?.updateNavigationState(it.canGoBack(), it.canGoForward())
         }
     }
 
@@ -735,10 +455,18 @@ class HardenedWebViewClient(
         sweepPreviousOrigin(url)
         // Reinforce injection on completion just in case of iframe or state resets
         view?.evaluateJavascript(getFingerprintInjectionScript(), null)
-        view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
+        if (viewModel?.deAMPEnabled?.value == true) {
+            view?.evaluateJavascript(shieldsEngine.ampNeutralizerScript, null)
+        }
+        if (viewModel?.webRtcPrivacyEnabled?.value == true) {
+            view?.evaluateJavascript(shieldsEngine.webRtcShieldScript, null)
+        }
         view?.let { injectCustomUserScripts(it) }
         val title = view?.title ?: ""
         url?.let { onPageFinishedCallback(it, title) }
+        view?.let {
+            viewModel?.updateNavigationState(it.canGoBack(), it.canGoForward())
+        }
     }
 
     override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
