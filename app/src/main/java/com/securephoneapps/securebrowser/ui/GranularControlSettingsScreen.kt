@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -38,8 +40,11 @@ fun GranularControlSettingsScreen(viewModel: BrowserStateViewModel) {
     val hardwareShutter by viewModel.isHardwareShutterActive.collectAsState()
     val restrictLocal by viewModel.restrictLocalSubnets.collectAsState()
     val forcedDark by viewModel.forcedDarkModeEnabled.collectAsState()
+    val adBlockEnabled by viewModel.adBlockEnabled.collectAsState()
+    val searchSuggestionsEnabled by viewModel.searchSuggestionsEnabled.collectAsState()
     val appTheme by viewModel.appTheme.collectAsState()
     val themeColor by viewModel.themeColor.collectAsState()
+    val addressBarPosition by viewModel.addressBarPosition.collectAsState()
     
     val searchEngine by viewModel.searchEngine.collectAsState()
     val customSearchUrl by viewModel.customSearchEngineUrl.collectAsState()
@@ -103,6 +108,13 @@ fun GranularControlSettingsScreen(viewModel: BrowserStateViewModel) {
                 options = listOf("Blue", "Green", "Purple", "Red", "Orange"),
                 selectedOption = themeColor,
                 onOptionSelected = { viewModel.updateThemeColor(it) }
+            )
+            Spacer(Modifier.height(16.dp))
+            SettingsDropdown(
+                label = "Address Bar Layout Position",
+                options = listOf("Top", "Bottom"),
+                selectedOption = addressBarPosition,
+                onOptionSelected = { viewModel.updateAddressBarPosition(it) }
             )
             
             Spacer(Modifier.height(24.dp))
@@ -218,6 +230,91 @@ fun GranularControlSettingsScreen(viewModel: BrowserStateViewModel) {
             SettingsToggleItem("Enforce Camera & Microphone Hard Shutter", "Zero-trust media request denial", hardwareShutter) { viewModel.toggleHardwareShutter(it) }
             SettingsToggleItem("Restrict Local Intranet Port Scanning", "Blocks private subnet probes", restrictLocal) { viewModel.toggleRestrictLocalSubnets(it) }
             SettingsToggleItem("Forced Layout Dark Mode Engine", "Native CSS inversion for all sites", forcedDark) { viewModel.toggleForcedDarkMode(it) }
+            SettingsToggleItem("Ad-Block & Tracker Protection", "Brave-style tracker and ad interception", adBlockEnabled) { viewModel.toggleSetting(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_AD_BLOCK_ENABLED, it) }
+            SettingsToggleItem("Private Search Suggestions", "Fetches suggestions from DuckDuckGo as you type", searchSuggestionsEnabled) { viewModel.toggleSetting("search_suggestions_enabled", it) }
+
+            Spacer(Modifier.height(16.dp))
+            var showPermissionsDialog by remember { mutableStateOf(false) }
+            Button(
+                onClick = { showPermissionsDialog = true },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(Icons.Default.Security, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Manage Site Permissions")
+            }
+            Text(
+                "Review and revoke camera, mic, and location permissions granted to websites",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            )
+
+            if (showPermissionsDialog) {
+                val sitePermissions by viewModel.sitePermissions.collectAsState()
+                AlertDialog(
+                    onDismissRequest = { showPermissionsDialog = false },
+                    title = { Text("Site-Specific Permissions") },
+                    text = {
+                        if (sitePermissions.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                                Text("No site permissions recorded.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        } else {
+                            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
+                                items(sitePermissions.entries.toList()) { entry ->
+                                    val origin = entry.key
+                                    val resMap = entry.value
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text(origin, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+                                            Spacer(Modifier.height(4.dp))
+                                            resMap.forEach { (res, granted) ->
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Icon(
+                                                            imageVector = when(res) {
+                                                                "Camera" -> Icons.Default.Videocam
+                                                                "Microphone" -> Icons.Default.Mic
+                                                                else -> Icons.Default.LocationOn
+                                                            },
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(16.dp),
+                                                            tint = MaterialTheme.colorScheme.primary
+                                                        )
+                                                        Spacer(Modifier.width(4.dp))
+                                                        Text(res, style = MaterialTheme.typography.bodySmall)
+                                                    }
+                                                    IconButton(onClick = { viewModel.revokeSitePermission(origin, res) }, modifier = Modifier.size(24.dp)) {
+                                                        Icon(Icons.Default.Delete, "Revoke", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showPermissionsDialog = false }) {
+                            Text("Close")
+                        }
+                    }
+                )
+            }
 
             Spacer(Modifier.height(24.dp))
             SettingsSectionTitle("Data Portability & Backup")

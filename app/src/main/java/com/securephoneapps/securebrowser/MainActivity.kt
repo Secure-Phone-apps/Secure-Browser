@@ -35,6 +35,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Pre-create WebView Code Cache directories to eliminate E/chromium: opendir missing directory warnings
+        try {
+            val jsDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/js")
+            val wasmDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/wasm")
+            if (!jsDir.exists()) jsDir.mkdirs()
+            if (!wasmDir.exists()) wasmDir.mkdirs()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         val webViewManager = com.securephoneapps.securebrowser.engine.WebViewManager(this)
 
         setContent {
@@ -63,12 +73,23 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 webViewManager.updateSettings(viewModel)
             }
 
-            val triggerUrlLoad by viewModel.activeTabUrl.collectAsState()
-            
-            LaunchedEffect(triggerUrlLoad) {
-                if (triggerUrlLoad.isNotBlank() && triggerUrlLoad != "about:blank") {
-                    if (webView?.url != triggerUrlLoad) {
-                        webView?.loadUrl(triggerUrlLoad)
+            LaunchedEffect(webView) {
+                if (webView != null) {
+                    val currentTabUrl = viewModel.activeTabUrl.value
+                    if (currentTabUrl.isNotBlank() && currentTabUrl != "about:blank") {
+                        if (webView.url == null || webView.url == "about:blank" || webView.url != currentTabUrl) {
+                            webView.loadUrl(currentTabUrl)
+                        }
+                    }
+                }
+            }
+
+            LaunchedEffect(webView) {
+                if (webView != null) {
+                    viewModel.loadUrlEvent.collect { url ->
+                        if (url.isNotBlank() && url != "about:blank") {
+                            webView.loadUrl(url)
+                        }
                     }
                 }
             }

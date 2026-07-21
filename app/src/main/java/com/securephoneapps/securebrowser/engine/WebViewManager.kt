@@ -64,8 +64,29 @@ class WebViewManager(private val context: Context) {
                 override fun onPermissionRequest(request: android.webkit.PermissionRequest) {
                     if (viewModel.isHardwareShutterActive.value) {
                         request.deny()
+                        return
+                    }
+                    val origin = request.origin.toString()
+                    val sitePermissionsMap = viewModel.sitePermissions.value
+                    val originPermissions = sitePermissionsMap[origin]
+                    val requestedResources = request.resources
+                    val resourcesToGrant = mutableListOf<String>()
+
+                    requestedResources.forEach { res ->
+                        val friendlyName = viewModel.mapResourceToName(res)
+                        val existingSetting = originPermissions?.get(friendlyName)
+                        if (existingSetting == true) {
+                            resourcesToGrant.add(res)
+                        } else if (existingSetting == null) {
+                            viewModel.setSitePermission(origin, friendlyName, true)
+                            resourcesToGrant.add(res)
+                        }
+                    }
+
+                    if (resourcesToGrant.isNotEmpty()) {
+                        request.grant(resourcesToGrant.toTypedArray())
                     } else {
-                        request.grant(request.resources)
+                        request.deny()
                     }
                 }
                 override fun onProgressChanged(view: WebView, newProgress: Int) {

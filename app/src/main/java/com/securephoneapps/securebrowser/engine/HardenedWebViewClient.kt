@@ -105,7 +105,7 @@ class HardenedWebViewClient(
             return generateSecurityWarningResponse()
         }
 
-        if (shieldsEngine.shouldBlock(url)) {
+        if (viewModel?.adBlockEnabled?.value != false && shieldsEngine.shouldBlock(url)) {
             onTrackerBlocked(url)
             return shieldsEngine.generateBlankResponse()
         }
@@ -257,7 +257,7 @@ class HardenedWebViewClient(
             if (isMalicious(host)) {
                 return generateSecurityWarningResponse()
             }
-            if (shieldsEngine.shouldBlock(url)) {
+            if (viewModel?.adBlockEnabled?.value != false && shieldsEngine.shouldBlock(url)) {
                 onTrackerBlocked(url)
                 return shieldsEngine.generateBlankResponse()
             }

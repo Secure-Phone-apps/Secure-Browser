@@ -18,6 +18,8 @@ import com.securephoneapps.securebrowser.model.TabInstance
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -101,6 +103,19 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     val canGoBack = MutableStateFlow(false)
     val canGoForward = MutableStateFlow(false)
 
+    val adBlockEnabled = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_AD_BLOCK_ENABLED, true))
+    val searchSuggestionsEnabled = MutableStateFlow(settingsRepository.getBoolean("search_suggestions_enabled", true))
+
+    // New Roadmap Features State Flow
+    val addressBarPosition = MutableStateFlow(settingsRepository.getString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_ADDRESS_BAR_POSITION, "Top"))
+    
+    private val _sitePermissions = MutableStateFlow<Map<String, Map<String, Boolean>>>(emptyMap())
+    val sitePermissions: StateFlow<Map<String, Map<String, Boolean>>> = _sitePermissions.asStateFlow()
+
+    val isReaderModeActive = MutableStateFlow(false)
+    val readerTitle = MutableStateFlow("")
+    val readerContent = MutableStateFlow<List<String>>(emptyList())
+
     fun updateNavigationState(canBack: Boolean, canForward: Boolean) {
         canGoBack.value = canBack
         canGoForward.value = canForward
@@ -109,12 +124,20 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     private val _activeTabUrl = MutableStateFlow("")
     val activeTabUrl: StateFlow<String> = _activeTabUrl.asStateFlow()
 
+    private val _loadUrlEvent = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val loadUrlEvent = _loadUrlEvent.asSharedFlow()
+
     init {
+        loadSitePermissions()
         viewModelScope.launch {
             repository.allTabs.collect { tabs ->
                 _tabsState.value = tabs
-                if (tabs.isNotEmpty() && _activeTabId.value == null) {
-                    _activeTabId.value = tabs.first().tabId
+                if (tabs.isNotEmpty()) {
+                    if (_activeTabId.value == null) {
+                        _activeTabId.value = tabs.first().tabId
+                    }
+                } else {
+                    createDefaultTab()
                 }
             }
         }
@@ -230,7 +253,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     private var searchJob: kotlinx.coroutines.Job? = null
     fun fetchSearchSuggestions(query: String) {
         searchJob?.cancel()
-        if (query.isBlank()) { searchSuggestions.value = emptyList(); return }
+        if (!searchSuggestionsEnabled.value || query.isBlank()) { searchSuggestions.value = emptyList(); return }
         searchJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 delay(150)
@@ -342,13 +365,20 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             repository.insertTab(tab)
             _activeTabId.value = tab.tabId
             navigationManager.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Browser)
+            if (url.isNotBlank() && url != "about:blank") {
+                _loadUrlEvent.tryEmit(url)
+            }
         }
     }
 
     fun selectTab(tabId: String) {
         _activeTabId.value = tabId
-        _activeTabUrl.value = _tabsState.value.find { it.tabId == tabId }?.currentUrl ?: ""
+        val url = _tabsState.value.find { it.tabId == tabId }?.currentUrl ?: ""
+        _activeTabUrl.value = url
         navigationManager.navigateTo(com.securephoneapps.securebrowser.manager.NavigationManager.Screen.Browser)
+        if (url.isNotBlank() && url != "about:blank") {
+            _loadUrlEvent.tryEmit(url)
+        }
     }
 
     fun closeTab(tabId: String) {
@@ -397,9 +427,19 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_DE_AMP -> deAMPEnabled.value = value
             com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_FORCE_DARK_MODE -> forcedDarkModeEnabled.value = value
             com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_HARDWARE_SHUTTER -> isHardwareShutterActive.value = value
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_AD_BLOCK_ENABLED -> adBlockEnabled.value = value
+            "search_suggestions_enabled" -> searchSuggestionsEnabled.value = value
             com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_BIOMETRIC_LOCK -> {
                 isBiometricLockEnabled.value = value
                 if (!value) isAuthenticated.value = true
+            }
+        }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            databaseMutex.withLock {
+                repository.clearHistory()
             }
         }
     }
@@ -415,6 +455,169 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                 android.webkit.WebStorage.getInstance().deleteAllData()
             }
             createDefaultTab()
+        }
+    }
+
+    fun triggerNuclearFire(activeWebView: WebView? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            databaseMutex.withLock {
+                repository.clearAllTabs()
+                repository.clearHistory()
+                withContext(Dispatchers.Main) {
+                    android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                    android.webkit.WebStorage.getInstance().deleteAllData()
+                    activeWebView?.clearHistory()
+                    activeWebView?.loadUrl("about:blank")
+                }
+                _tabsState.value = emptyList()
+                _activeTabId.value = null
+                createDefaultTab()
+            }
+        }
+    }
+
+    fun updateAddressBarPosition(position: String) {
+        settingsRepository.setString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_ADDRESS_BAR_POSITION, position)
+        addressBarPosition.value = position
+    }
+
+    private fun loadSitePermissions() {
+        val serialized = settingsRepository.getString("site_permissions_data", "")
+        if (serialized.isNotEmpty()) {
+            try {
+                val map = mutableMapOf<String, MutableMap<String, Boolean>>()
+                serialized.split(",").forEach { entry ->
+                    val parts = entry.split("|")
+                    if (parts.size == 3) {
+                        val origin = parts[0]
+                        val resource = parts[1]
+                        val granted = parts[2].toBoolean()
+                        map.getOrPut(origin) { mutableMapOf() }[resource] = granted
+                    }
+                }
+                _sitePermissions.value = map
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun saveSitePermissions() {
+        val list = mutableListOf<String>()
+        _sitePermissions.value.forEach { (origin, resMap) ->
+            resMap.forEach { (res, granted) ->
+                list.add("$origin|$res|$granted")
+            }
+        }
+        settingsRepository.setString("site_permissions_data", list.joinToString(","))
+    }
+
+    fun setSitePermission(origin: String, resource: String, granted: Boolean) {
+        val current = _sitePermissions.value.toMutableMap()
+        val resMap = current[origin]?.toMutableMap() ?: mutableMapOf()
+        resMap[resource] = granted
+        current[origin] = resMap
+        _sitePermissions.value = current
+        saveSitePermissions()
+    }
+
+    fun revokeSitePermission(origin: String, resource: String) {
+        val current = _sitePermissions.value.toMutableMap()
+        val resMap = current[origin]?.toMutableMap()
+        if (resMap != null) {
+            resMap.remove(resource)
+            if (resMap.isEmpty()) {
+                current.remove(origin)
+            } else {
+                current[origin] = resMap
+            }
+        }
+        _sitePermissions.value = current
+        saveSitePermissions()
+    }
+
+    fun mapResourceToName(resource: String): String {
+        return when (resource) {
+            android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE -> "Camera"
+            android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE -> "Microphone"
+            "android.webkit.resource.MIDI_SYSEX" -> "MIDI"
+            "android.webkit.resource.PROTECTED_MEDIA_ID" -> "Protected Media"
+            else -> resource.substringAfterLast(".")
+        }
+    }
+
+    fun enterReaderMode(webView: WebView) {
+        viewModelScope.launch(Dispatchers.Main) {
+            val script = """
+                (function() {
+                    var title = document.querySelector('h1')?.innerText || document.title;
+                    var elements = [];
+                    var paragraphs = document.querySelectorAll('p, h1, h2, h3, li');
+                    for (var i = 0; i < paragraphs.length; i++) {
+                        var el = paragraphs[i];
+                        if (el.innerText.trim().length > 0) {
+                            elements.push(JSON.stringify({tag: el.tagName, text: el.innerText.trim()}));
+                        }
+                    }
+                    return JSON.stringify({title: title, elements: elements});
+                })()
+            """.trimIndent()
+
+            webView.evaluateJavascript(script) { result ->
+                if (result != null && result != "null" && result.isNotEmpty()) {
+                    try {
+                        val outerString = org.json.JSONTokener(result).nextValue() as String
+                        val json = org.json.JSONObject(outerString)
+                        val title = json.optString("title", "Reader Mode Document")
+                        val elementsArr = json.optJSONArray("elements")
+                        
+                        val contentList = mutableListOf<String>()
+                        if (elementsArr != null) {
+                            for (i in 0 until elementsArr.length()) {
+                                val itemStr = elementsArr.getString(i)
+                                val itemObj = org.json.JSONObject(itemStr)
+                                val tag = itemObj.optString("tag", "P")
+                                val text = itemObj.optString("text", "")
+                                if (text.isNotBlank()) {
+                                    if (tag.startsWith("H")) {
+                                        contentList.add("## $text")
+                                    } else {
+                                        contentList.add(text)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        readerTitle.value = title
+                        readerContent.value = contentList
+                        isReaderModeActive.value = true
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        readerTitle.value = "Document Reader"
+                        readerContent.value = listOf("Failed to extract full readable format. This site may have a complex structure.")
+                        isReaderModeActive.value = true
+                    }
+                }
+            }
+        }
+    }
+
+    fun exitReaderMode() {
+        isReaderModeActive.value = false
+        readerTitle.value = ""
+        readerContent.value = emptyList()
+    }
+
+    fun printActivePage(webView: WebView) {
+        viewModelScope.launch(Dispatchers.Main) {
+            try {
+                val printManager = context.getSystemService(Context.PRINT_SERVICE) as android.print.PrintManager
+                val jobName = "SecureBrowser_Page_" + System.currentTimeMillis()
+                val printAdapter = webView.createPrintDocumentAdapter(jobName)
+                printManager.print(jobName, printAdapter, android.print.PrintAttributes.Builder().build())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -486,6 +689,12 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun loadUrl(url: String) {
+        val resolvedUrl = executeUrlResolution(url)
+        updateActiveTabUrl(resolvedUrl, "Loading...")
+        _loadUrlEvent.tryEmit(resolvedUrl)
+    }
+
     fun executeUrlResolution(input: String): String {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return "about:blank"
@@ -546,6 +755,30 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             val uri = URI(url)
             uri.host?.lowercase()
         } catch (e: Exception) { null }
+    }
+
+    fun addBookmark(url: String, title: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            databaseMutex.withLock {
+                repository.insertBookmark(BookmarkItem(url = url, title = title))
+            }
+        }
+    }
+
+    fun deleteBookmarkById(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            databaseMutex.withLock {
+                repository.deleteBookmarkById(id)
+            }
+        }
+    }
+
+    fun deleteHistoryItem(item: HistoryItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            databaseMutex.withLock {
+                database.historyDao().deleteHistoryItem(item)
+            }
+        }
     }
 
     companion object {

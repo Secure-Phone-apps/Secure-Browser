@@ -45,5 +45,6 @@ class SettingsRepository(context: Context) {
         const val KEY_STRIP_TRACKING = "strip_tracking_enabled"
         const val KEY_BIOMETRIC_LOCK = "biometric_lock_enabled"
         const val KEY_HARDWARE_SHUTTER = "hardware_shutter_active"
+        const val KEY_ADDRESS_BAR_POSITION = "address_bar_position"
     }
 }
