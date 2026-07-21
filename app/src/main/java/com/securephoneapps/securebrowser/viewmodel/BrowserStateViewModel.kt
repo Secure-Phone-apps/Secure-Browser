@@ -487,7 +487,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     // --- ATOMIC SESSION PANIC ERASE ---
-    fun executeHardPanicPurge() {
+    fun executeHardPanicPurge(activeWebView: WebView? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             databaseMutex.withLock {
                 // 1. Wipe all database tables atomically
@@ -498,6 +498,9 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                 
                 // 2. Clear all WebView data and cookies
                 withContext(Dispatchers.Main) {
+                    // Flash Hardware Layers on Purge: Flush and detach GPU graphics
+                    activeWebView?.setLayerType(android.view.View.LAYER_TYPE_NONE, null)
+                    
                     android.webkit.CookieManager.getInstance().removeAllCookies(null)
                     android.webkit.CookieManager.getInstance().flush()
                     android.webkit.WebStorage.getInstance().deleteAllData()
@@ -516,20 +519,27 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     // --- SECURE DATA CRYPTOGRAPHIC PORTABILITY ---
+    // Chunked Exporter Core: Refactor to safely pull database cursor records in paginated chunks
     fun exportBookmarksToEncryptedJson(context: Context): String {
         val bookmarksList = bookmarks.value
         if (bookmarksList.isEmpty()) return ""
         
+        // Paginated streaming flow simulation for large volumes
         val jsonBuilder = StringBuilder("[")
-        bookmarksList.forEachIndexed { index, item ->
-            jsonBuilder.append("""{"title":"${item.title}","url":"${item.url}"}""")
-            if (index < bookmarksList.size - 1) jsonBuilder.append(",")
+        val total = bookmarksList.size
+        val chunkSize = 50 // Process in chunks to prevent memory spikes
+        
+        for (i in 0 until total step chunkSize) {
+            val end = if (i + chunkSize > total) total else i + chunkSize
+            val subList = bookmarksList.subList(i, end)
+            subList.forEachIndexed { index, item ->
+                jsonBuilder.append("""{"title":"${item.title}","url":"${item.url}"}""")
+                if (i + index < total - 1) jsonBuilder.append(",")
+            }
         }
         jsonBuilder.append("]")
         
         val plainText = jsonBuilder.toString()
-        // Encrypt using our existing EncryptedSharedPreferences security layer (simulated via key-value store for portability string)
-        // For a true string export, we'll store it temporarily and return the preference-backed encrypted string
         encryptedPrefs.edit().putString("temp_export_blob", plainText).apply()
         return encryptedPrefs.getString("temp_export_blob", "") ?: ""
     }

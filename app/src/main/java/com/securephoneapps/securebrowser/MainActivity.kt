@@ -153,12 +153,19 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     private var activeWebView: WebView? = null
 
-    private fun showBiometricPrompt(onSuccess: () -> Unit) {
+    private fun showBiometricPrompt(onSuccess: () -> Unit, onError: (() -> Unit)? = null) {
         val executor = ContextCompat.getMainExecutor(this)
         val biometricPrompt = BiometricPrompt(this, executor,
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
+                    // Biometric Tap-Outside Fix: Handle errors (cancellation, timeout, etc)
+                    if (errorCode == BiometricPrompt.ERROR_USER_CANCELED || 
+                        errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON || 
+                        errorCode == BiometricPrompt.ERROR_TIMEOUT ||
+                        errorCode == BiometricPrompt.ERROR_CANCELED) {
+                        onError?.invoke()
+                    }
                     Toast.makeText(applicationContext, "Authentication error: $errString", Toast.LENGTH_SHORT).show()
                 }
 
@@ -287,6 +294,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
                 val biometricEnabled by viewModel.isBiometricLockEnabled.collectAsState()
                 val isAuthenticated by viewModel.isAuthenticated.collectAsState()
+                var showBiometricRetryButton by remember { mutableStateOf(false) }
 
                 if (!isAuthenticated) {
                     Box(
@@ -321,16 +329,46 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 textAlign = TextAlign.Center
                             )
                             Spacer(modifier = Modifier.height(32.dp))
-                            Button(
-                                onClick = {
-                                    showBiometricPrompt {
-                                        viewModel.isAuthenticated.value = true
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
-                            ) {
-                                Text("Unlock App", color = Color.White)
+                            
+                            if (showBiometricRetryButton) {
+                                Button(
+                                    onClick = {
+                                        showBiometricRetryButton = false
+                                        showBiometricPrompt(
+                                            onSuccess = { viewModel.isAuthenticated.value = true },
+                                            onError = { showBiometricRetryButton = true }
+                                        )
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    modifier = Modifier
+                                        .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Unlock Vault", color = Color.White)
+                                }
+                            } else {
+                                Button(
+                                    onClick = {
+                                        showBiometricPrompt(
+                                            onSuccess = { viewModel.isAuthenticated.value = true },
+                                            onError = { showBiometricRetryButton = true }
+                                        )
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+                                ) {
+                                    Text("Retry Biometric", color = Color.White)
+                                }
                             }
+                        }
+                    }
+
+                    LaunchedEffect(Unit) {
+                        if (!isAuthenticated) {
+                            showBiometricPrompt(
+                                onSuccess = { viewModel.isAuthenticated.value = true },
+                                onError = { showBiometricRetryButton = true }
+                            )
                         }
                     }
                 } else {
@@ -377,9 +415,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         val viewModel = androidx.lifecycle.ViewModelProvider(this)[BrowserStateViewModel::class.java]
         if (viewModel.isBiometricLockEnabled.value) {
             viewModel.isAuthenticated.value = false
-            showBiometricPrompt {
-                viewModel.isAuthenticated.value = true
-            }
+            showBiometricPrompt(
+                onSuccess = { viewModel.isAuthenticated.value = true },
+                onError = { /* showBiometricRetryButton is handled in setContent scope */ }
+            )
         }
     }
 
@@ -432,6 +471,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         // Picture-in-Picture Dismissal Sweep: If PiP is closed while in background, kill the session
+        // Write an explicit validation trap: if isInPictureInPictureMode returns false and activity lifecycle is stopped/background
         if (!isInPictureInPictureMode) {
             val lifecycleState = lifecycle.currentState
             if (lifecycleState == Lifecycle.State.CREATED || lifecycleState == Lifecycle.State.STARTED || lifecycleState == Lifecycle.State.DESTROYED) {
@@ -1128,7 +1168,8 @@ fun BrowserWorkspaceScreen(
                 Color(0xFF2563EB)
             }
 
-            if (isLoading && progress < 100) {
+            // Optimize the horizontal Material3 progress indicator bar: Only recompose when 1-99
+            if (progress in 1..99) {
                 androidx.compose.material3.LinearProgressIndicator(
                     progress = { progress / 100f },
                     modifier = Modifier.fillMaxWidth().height(2.dp),
@@ -1224,7 +1265,7 @@ fun BrowserWorkspaceScreen(
                 // SESSION PANIC TERMINATION ACTION
                 IconButton(
                     onClick = {
-                        viewModel.executeHardPanicPurge()
+                        viewModel.executeHardPanicPurge(webViewInstance)
                         // Completely drop the OS application process matrix instantly
                         android.os.Process.killProcess(android.os.Process.myPid())
                         System.exit(0)
