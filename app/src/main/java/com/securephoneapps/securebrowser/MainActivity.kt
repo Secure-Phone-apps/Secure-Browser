@@ -429,6 +429,20 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
     }
 
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        // Picture-in-Picture Dismissal Sweep: If PiP is closed while in background, kill the session
+        if (!isInPictureInPictureMode) {
+            val lifecycleState = lifecycle.currentState
+            if (lifecycleState == Lifecycle.State.CREATED || lifecycleState == Lifecycle.State.STARTED || lifecycleState == Lifecycle.State.DESTROYED) {
+                activeWebView?.let { webView ->
+                    webView.onPause()
+                    webView.loadUrl("about:blank")
+                }
+            }
+        }
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val webView = activeWebView

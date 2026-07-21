@@ -191,55 +191,57 @@ class ShieldsCoreEngine {
      * Companion stream reader capable of processing compressed rulesets dynamically at runtime.
      */
     fun importCompressedRuleset(input: InputStream) {
-        try {
-            val bufferedInput = java.io.BufferedInputStream(input)
-            bufferedInput.mark(2)
-            val header = ByteArray(2)
-            val readBytes = bufferedInput.read(header)
-            bufferedInput.reset()
-            
-            val isGzip = readBytes == 2 && 
-                (header[0].toInt() and 0xFF == 0x1f) && 
-                (header[1].toInt() and 0xFF == 0x8b)
+        synchronized(this) {
+            try {
+                val bufferedInput = java.io.BufferedInputStream(input)
+                bufferedInput.mark(2)
+                val header = ByteArray(2)
+                val readBytes = bufferedInput.read(header)
+                bufferedInput.reset()
+                
+                val isGzip = readBytes == 2 && 
+                    (header[0].toInt() and 0xFF == 0x1f) && 
+                    (header[1].toInt() and 0xFF == 0x8b)
 
-            val finalStream = if (isGzip) {
-                java.util.zip.GZIPInputStream(bufferedInput)
-            } else {
-                bufferedInput
-            }
+                val finalStream = if (isGzip) {
+                    java.util.zip.GZIPInputStream(bufferedInput)
+                } else {
+                    bufferedInput
+                }
 
-            val reader = java.io.BufferedReader(java.io.InputStreamReader(finalStream, Charsets.UTF_8))
-            var line = reader.readLine()
-            while (line != null) {
-                val trimmed = line.trim()
-                if (trimmed.isNotEmpty() && !trimmed.startsWith("#") && !trimmed.startsWith("!")) {
-                    var cleanRule = trimmed
-                    if (cleanRule.startsWith("||")) {
-                        cleanRule = cleanRule.substring(2)
-                    }
-                    val caretIdx = cleanRule.indexOf('^')
-                    if (caretIdx != -1) {
-                        cleanRule = cleanRule.substring(0, caretIdx)
-                    }
-                    val slashIdx = cleanRule.indexOf('/')
-                    if (slashIdx != -1) {
-                        cleanRule = cleanRule.substring(0, slashIdx)
-                    }
-                    cleanRule = cleanRule.trim().lowercase()
-                    if (cleanRule.isNotEmpty()) {
-                        if (cleanRule.contains(".")) {
-                            blockedDomains.add(cleanRule)
-                            addToBloom(cleanRule)
-                        } else {
-                            blockedKeywords.add(cleanRule)
-                            addToBloom(cleanRule)
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(finalStream, Charsets.UTF_8))
+                var line = reader.readLine()
+                while (line != null) {
+                    val trimmed = line.trim()
+                    if (trimmed.isNotEmpty() && !trimmed.startsWith("#") && !trimmed.startsWith("!")) {
+                        var cleanRule = trimmed
+                        if (cleanRule.startsWith("||")) {
+                            cleanRule = cleanRule.substring(2)
+                        }
+                        val caretIdx = cleanRule.indexOf('^')
+                        if (caretIdx != -1) {
+                            cleanRule = cleanRule.substring(0, caretIdx)
+                        }
+                        val slashIdx = cleanRule.indexOf('/')
+                        if (slashIdx != -1) {
+                            cleanRule = cleanRule.substring(0, slashIdx)
+                        }
+                        cleanRule = cleanRule.trim().lowercase()
+                        if (cleanRule.isNotEmpty()) {
+                            if (cleanRule.contains(".")) {
+                                blockedDomains.add(cleanRule)
+                                addToBloom(cleanRule)
+                            } else {
+                                blockedKeywords.add(cleanRule)
+                                addToBloom(cleanRule)
+                            }
                         }
                     }
+                    line = reader.readLine()
                 }
-                line = reader.readLine()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
@@ -248,39 +250,41 @@ class ShieldsCoreEngine {
      * from standardized string asset updates seamlessly.
      */
     fun updateFilterList(rulesStream: InputStream) {
-        try {
-            val reader = java.io.BufferedReader(java.io.InputStreamReader(rulesStream, Charsets.UTF_8))
-            var line = reader.readLine()
-            while (line != null) {
-                val trimmed = line.trim()
-                if (trimmed.isNotEmpty() && !trimmed.startsWith("#") && !trimmed.startsWith("!")) {
-                    var cleanRule = trimmed
-                    if (cleanRule.startsWith("||")) {
-                        cleanRule = cleanRule.substring(2)
-                    }
-                    val caretIdx = cleanRule.indexOf('^')
-                    if (caretIdx != -1) {
-                        cleanRule = cleanRule.substring(0, caretIdx)
-                    }
-                    val slashIdx = cleanRule.indexOf('/')
-                    if (slashIdx != -1) {
-                        cleanRule = cleanRule.substring(0, slashIdx)
-                    }
-                    cleanRule = cleanRule.trim().lowercase()
-                    if (cleanRule.isNotEmpty()) {
-                        if (cleanRule.contains(".")) {
-                            blockedDomains.add(cleanRule)
-                            addToBloom(cleanRule)
-                        } else {
-                            blockedKeywords.add(cleanRule)
-                            addToBloom(cleanRule)
+        synchronized(this) {
+            try {
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(rulesStream, Charsets.UTF_8))
+                var line = reader.readLine()
+                while (line != null) {
+                    val trimmed = line.trim()
+                    if (trimmed.isNotEmpty() && !trimmed.startsWith("#") && !trimmed.startsWith("!")) {
+                        var cleanRule = trimmed
+                        if (cleanRule.startsWith("||")) {
+                            cleanRule = cleanRule.substring(2)
+                        }
+                        val caretIdx = cleanRule.indexOf('^')
+                        if (caretIdx != -1) {
+                            cleanRule = cleanRule.substring(0, caretIdx)
+                        }
+                        val slashIdx = cleanRule.indexOf('/')
+                        if (slashIdx != -1) {
+                            cleanRule = cleanRule.substring(0, slashIdx)
+                        }
+                        cleanRule = cleanRule.trim().lowercase()
+                        if (cleanRule.isNotEmpty()) {
+                            if (cleanRule.contains(".")) {
+                                blockedDomains.add(cleanRule)
+                                addToBloom(cleanRule)
+                            } else {
+                                blockedKeywords.add(cleanRule)
+                                addToBloom(cleanRule)
+                            }
                         }
                     }
+                    line = reader.readLine()
                 }
-                line = reader.readLine()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
@@ -353,39 +357,41 @@ class ShieldsCoreEngine {
             return true
         }
 
-        // Layer A: Bloom filter check on the host name
-        var hitBloom = checkBloom(host)
-        if (!hitBloom) {
-            // Also check keywords in the url using bloom-filtered substring check to capture tracking parameters
-            for (keyword in blockedKeywords) {
-                if (url.contains(keyword)) {
-                    hitBloom = true
-                    break
+        synchronized(this) {
+            // Layer A: Bloom filter check on the host name
+            var hitBloom = checkBloom(host)
+            if (!hitBloom) {
+                // Also check keywords in the url using bloom-filtered substring check to capture tracking parameters
+                for (keyword in blockedKeywords) {
+                    if (url.contains(keyword)) {
+                        hitBloom = true
+                        break
+                    }
                 }
             }
-        }
 
-        // If it didn't hit the Bloom Filter, it is 100% safe to bypass instantly (Zero Latency)
-        if (!hitBloom) return false
+            // If it didn't hit the Bloom Filter, it is 100% safe to bypass instantly (Zero Latency)
+            if (!hitBloom) return false
 
-        // Layer B: Direct exact verification using O(1) HashSet
-        if (blockedDomains.contains(host)) {
-            return true
-        }
-
-        // Subdomain matching with HashSet
-        var parentDomain = host
-        while (parentDomain.contains(".")) {
-            parentDomain = parentDomain.substringAfter(".")
-            if (blockedDomains.contains(parentDomain)) {
+            // Layer B: Direct exact verification using O(1) HashSet
+            if (blockedDomains.contains(host)) {
                 return true
             }
-        }
 
-        // Exact Keyword matching fallback
-        for (keyword in blockedKeywords) {
-            if (url.contains(keyword)) {
-                return true
+            // Subdomain matching with HashSet
+            var parentDomain = host
+            while (parentDomain.contains(".")) {
+                parentDomain = parentDomain.substringAfter(".")
+                if (blockedDomains.contains(parentDomain)) {
+                    return true
+                }
+            }
+
+            // Exact Keyword matching fallback
+            for (keyword in blockedKeywords) {
+                if (url.contains(keyword)) {
+                    return true
+                }
             }
         }
 

@@ -140,14 +140,14 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                     }
                 }
 
+                // Robust Mime Exporter Check: Bypass MediaStore.Images for non-image types
                 val collectionUri = if (mimeType.startsWith("image/")) {
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI
                 } else {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         MediaStore.Downloads.EXTERNAL_CONTENT_URI
                     } else {
-                        // Fallback for older versions if needed, but MediaStore.Downloads is Q+
-                        // For simplicity in this "Secure Browser" context, we'll use a generic approach or assume modern OS
+                        // Fallback for older versions
                         MediaStore.Files.getContentUri("external")
                     }
                 }
@@ -186,6 +186,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             }
         }
     }
+    private var searchJob: kotlinx.coroutines.Job? = null
     val isHardwareShutterActive = MutableStateFlow(encryptedPrefs.getBoolean("hardware_shutter_active", true))
     val isAudioShieldActive = MutableStateFlow(true)
     val searchSuggestions = MutableStateFlow<List<String>>(emptyList())
@@ -372,12 +373,14 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun fetchSearchSuggestions(query: String) {
+        searchJob?.cancel()
         if (query.isBlank()) {
             searchSuggestions.value = emptyList()
             return
         }
-        viewModelScope.launch(Dispatchers.IO) {
+        searchJob = viewModelScope.launch(Dispatchers.IO) {
             try {
+                delay(150)
                 val url = java.net.URL("https://duckduckgo.com/ac/?q=${java.net.URLEncoder.encode(query, "UTF-8")}&type=list")
                 val connection = url.openConnection() as java.net.HttpURLConnection
                 connection.requestMethod = "GET"
@@ -395,7 +398,9 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    e.printStackTrace()
+                }
             }
         }
     }
