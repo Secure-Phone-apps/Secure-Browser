@@ -41,6 +41,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             val wasmDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache/wasm")
             if (!jsDir.exists()) jsDir.mkdirs()
             if (!wasmDir.exists()) wasmDir.mkdirs()
+            
+            // Clean up decrypted temporary directory on launch for privacy protection
+            val decryptedDir = java.io.File(cacheDir, "decrypted")
+            if (decryptedDir.exists()) {
+                decryptedDir.listFiles()?.forEach { it.delete() }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }

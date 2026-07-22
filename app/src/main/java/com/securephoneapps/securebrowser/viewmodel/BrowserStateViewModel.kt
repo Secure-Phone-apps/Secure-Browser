@@ -450,6 +450,14 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             repository.clearHistory()
             repository.clearAllBookmarks()
             repository.clearAllGroups()
+            try {
+                val decryptedDir = File(context.cacheDir, "decrypted")
+                if (decryptedDir.exists()) {
+                    decryptedDir.listFiles()?.forEach { it.delete() }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             withContext(Dispatchers.Main) {
                 android.webkit.CookieManager.getInstance().removeAllCookies(null)
                 android.webkit.WebStorage.getInstance().deleteAllData()
@@ -463,6 +471,14 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             databaseMutex.withLock {
                 repository.clearAllTabs()
                 repository.clearHistory()
+                try {
+                    val decryptedDir = File(context.cacheDir, "decrypted")
+                    if (decryptedDir.exists()) {
+                        decryptedDir.listFiles()?.forEach { it.delete() }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
                 withContext(Dispatchers.Main) {
                     android.webkit.CookieManager.getInstance().removeAllCookies(null)
                     android.webkit.WebStorage.getInstance().deleteAllData()
