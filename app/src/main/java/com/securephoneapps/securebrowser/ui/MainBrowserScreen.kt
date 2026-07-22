@@ -633,22 +633,23 @@ fun QuickAccessGrid(viewModel: BrowserStateViewModel) {
         "GitHub" to "https://github.com"
     )
     
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
         quickAccess.forEach { (name, url) ->
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable { viewModel.loadUrl(url) }
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    onClick = { viewModel.loadUrl(url) },
+                    shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.size(56.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(name.take(1), style = MaterialTheme.typography.titleLarge)
+                        Text(name.take(1), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     }
                 }
-                Text(name, style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.height(8.dp))
+                Text(name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
             }
         }
     }
@@ -657,10 +658,10 @@ fun QuickAccessGrid(viewModel: BrowserStateViewModel) {
 @Composable
 fun HomeActionItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable { onClick() }
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
+            onClick = onClick,
             modifier = Modifier.size(56.dp),
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceVariant

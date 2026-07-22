@@ -325,7 +325,10 @@ fun GranularControlSettingsScreen(viewModel: BrowserStateViewModel) {
                 Button(
                     onClick = { viewModel.exportBookmarksToEncryptedJson(context) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f)),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.Upload, null, modifier = Modifier.size(18.dp))
@@ -335,7 +338,10 @@ fun GranularControlSettingsScreen(viewModel: BrowserStateViewModel) {
                 Button(
                     onClick = { /* Import logic trigger */ },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f)),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
