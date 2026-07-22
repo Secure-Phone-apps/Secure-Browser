@@ -22,6 +22,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import com.example.R
 import com.securephoneapps.securebrowser.model.TabInstance
 import com.securephoneapps.securebrowser.viewmodel.BrowserStateViewModel
 
@@ -561,11 +565,11 @@ fun HomeView(
         verticalArrangement = Arrangement.Center
     ) {
         // Logo or Icon
-        Icon(
-            Icons.Default.Shield,
-            contentDescription = null,
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.primary
+        Image(
+            painter = painterResource(id = R.drawable.ic_prism_shield),
+            contentDescription = "Secure Browser Prism Logo",
+            modifier = Modifier.size(96.dp),
+            contentScale = ContentScale.Fit
         )
         
         Spacer(Modifier.height(16.dp))
