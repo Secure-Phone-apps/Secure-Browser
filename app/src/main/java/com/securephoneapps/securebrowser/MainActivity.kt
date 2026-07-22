@@ -31,9 +31,12 @@ import androidx.compose.foundation.background
 
 class MainActivity : androidx.fragment.app.FragmentActivity() {
 
+    private lateinit var viewModel: BrowserStateViewModel
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        viewModel = androidx.lifecycle.ViewModelProvider(this)[BrowserStateViewModel::class.java]
 
         // Pre-create WebView Code Cache directories to eliminate E/chromium: opendir missing directory warnings
         try {
@@ -51,10 +54,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             e.printStackTrace()
         }
 
+        // Request notification permission on Android 13+ (API 33+) for background downloads
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            val permission = android.Manifest.permission.POST_NOTIFICATIONS
+            if (androidx.core.content.ContextCompat.checkSelfPermission(this, permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                androidx.core.app.ActivityCompat.requestPermissions(this, arrayOf(permission), 101)
+            }
+        }
+
         val webViewManager = com.securephoneapps.securebrowser.engine.WebViewManager(this)
 
         setContent {
-            val viewModel: BrowserStateViewModel = viewModel()
             val isAuthenticated by viewModel.isAuthenticated.collectAsState()
             val currentScreen by viewModel.currentScreen.collectAsState()
             val activeTabId by viewModel.activeTabId.collectAsState()
@@ -159,5 +169,25 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             .build()
 
         try { biometricPrompt.authenticate(promptInfo) } catch (e: Exception) { onSuccess() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        try {
+            com.securephoneapps.securebrowser.service.BackgroundMediaService.stop(this)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        try {
+            if (::viewModel.isInitialized && viewModel.backgroundMediaPlaybackEnabled.value) {
+                com.securephoneapps.securebrowser.service.BackgroundMediaService.start(this)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }

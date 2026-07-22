@@ -46,5 +46,6 @@ class SettingsRepository(context: Context) {
         const val KEY_BIOMETRIC_LOCK = "biometric_lock_enabled"
         const val KEY_HARDWARE_SHUTTER = "hardware_shutter_active"
         const val KEY_ADDRESS_BAR_POSITION = "address_bar_position"
+        const val KEY_BACKGROUND_MEDIA_PLAYBACK = "background_media_playback"
     }
 }

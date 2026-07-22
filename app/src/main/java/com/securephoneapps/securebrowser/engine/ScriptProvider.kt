@@ -47,4 +47,24 @@ object ScriptProvider {
             }
         })();
     """.trimIndent()
+
+    val backgroundMediaPlaybackScript = """
+        (function() {
+            try {
+                Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
+                Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+                Object.defineProperty(document, 'webkitHidden', { get: function() { return false; }, configurable: true });
+                Object.defineProperty(document, 'webkitVisibilityState', { get: function() { return 'visible'; }, configurable: true });
+            } catch (e) {}
+
+            var blockEvents = ['visibilitychange', 'webkitvisibilitychange', 'pagehide'];
+            var originalAddEventListener = EventTarget.prototype.addEventListener;
+            EventTarget.prototype.addEventListener = function(type, listener, options) {
+                if (blockEvents.indexOf(type) !== -1) {
+                    return;
+                }
+                return originalAddEventListener.call(this, type, listener, options);
+            };
+        })();
+    """.trimIndent()
 }

@@ -105,6 +105,7 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
 
     val adBlockEnabled = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_AD_BLOCK_ENABLED, true))
     val searchSuggestionsEnabled = MutableStateFlow(settingsRepository.getBoolean("search_suggestions_enabled", true))
+    val backgroundMediaPlaybackEnabled = MutableStateFlow(settingsRepository.getBoolean(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_BACKGROUND_MEDIA_PLAYBACK, false))
 
     // New Roadmap Features State Flow
     val addressBarPosition = MutableStateFlow(settingsRepository.getString(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_ADDRESS_BAR_POSITION, "Top"))
@@ -139,6 +140,11 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
                 } else {
                     createDefaultTab()
                 }
+            }
+        }
+        viewModelScope.launch {
+            com.securephoneapps.securebrowser.data.DownloadEventBus.downloadCompleted.collect {
+                refreshDownloadedFiles(context)
             }
         }
     }
@@ -432,6 +438,9 @@ class BrowserStateViewModel(application: Application) : AndroidViewModel(applica
             com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_BIOMETRIC_LOCK -> {
                 isBiometricLockEnabled.value = value
                 if (!value) isAuthenticated.value = true
+            }
+            com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_BACKGROUND_MEDIA_PLAYBACK -> {
+                backgroundMediaPlaybackEnabled.value = value
             }
         }
     }

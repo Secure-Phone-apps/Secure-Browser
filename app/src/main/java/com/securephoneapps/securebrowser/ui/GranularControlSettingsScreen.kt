@@ -42,6 +42,7 @@ fun GranularControlSettingsScreen(viewModel: BrowserStateViewModel) {
     val forcedDark by viewModel.forcedDarkModeEnabled.collectAsState()
     val adBlockEnabled by viewModel.adBlockEnabled.collectAsState()
     val searchSuggestionsEnabled by viewModel.searchSuggestionsEnabled.collectAsState()
+    val backgroundMediaPlayback by viewModel.backgroundMediaPlaybackEnabled.collectAsState()
     val appTheme by viewModel.appTheme.collectAsState()
     val themeColor by viewModel.themeColor.collectAsState()
     val addressBarPosition by viewModel.addressBarPosition.collectAsState()
@@ -232,6 +233,7 @@ fun GranularControlSettingsScreen(viewModel: BrowserStateViewModel) {
             SettingsToggleItem("Forced Layout Dark Mode Engine", "Native CSS inversion for all sites", forcedDark) { viewModel.toggleForcedDarkMode(it) }
             SettingsToggleItem("Ad-Block & Tracker Protection", "Brave-style tracker and ad interception", adBlockEnabled) { viewModel.toggleSetting(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_AD_BLOCK_ENABLED, it) }
             SettingsToggleItem("Private Search Suggestions", "Fetches suggestions from DuckDuckGo as you type", searchSuggestionsEnabled) { viewModel.toggleSetting("search_suggestions_enabled", it) }
+            SettingsToggleItem("Background Media Playback Bypass", "Allows audio and video to play uninterrupted when screen is off or app minimized", backgroundMediaPlayback) { viewModel.toggleSetting(com.securephoneapps.securebrowser.repository.SettingsRepository.KEY_BACKGROUND_MEDIA_PLAYBACK, it) }
 
             Spacer(Modifier.height(16.dp))
             var showPermissionsDialog by remember { mutableStateOf(false) }

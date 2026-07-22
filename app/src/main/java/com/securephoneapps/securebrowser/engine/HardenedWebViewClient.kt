@@ -395,6 +395,10 @@ class HardenedWebViewClient(
                     WebViewCompat.addDocumentStartJavaScript(view, com.securephoneapps.securebrowser.engine.ScriptProvider.ampNeutralizerScript, setOf("*"))
                 }
 
+                if (viewModel?.backgroundMediaPlaybackEnabled?.value == true) {
+                    WebViewCompat.addDocumentStartJavaScript(view, com.securephoneapps.securebrowser.engine.ScriptProvider.backgroundMediaPlaybackScript, setOf("*"))
+                }
+
                 WebViewCompat.addDocumentStartJavaScript(view, com.securephoneapps.securebrowser.engine.ScriptProvider.gpcScript, setOf("*"))
                 
                 registeredWebViews.add(hash)
@@ -453,6 +457,9 @@ class HardenedWebViewClient(
             if (viewModel?.webRtcPrivacyEnabled?.value == true) {
                 view?.evaluateJavascript(com.securephoneapps.securebrowser.engine.ScriptProvider.webRtcShieldScript, null)
             }
+            if (viewModel?.backgroundMediaPlaybackEnabled?.value == true) {
+                view?.evaluateJavascript(com.securephoneapps.securebrowser.engine.ScriptProvider.backgroundMediaPlaybackScript, null)
+            }
         }
         view?.let { injectCustomUserScripts(it) }
         url?.let {
@@ -474,6 +481,9 @@ class HardenedWebViewClient(
         }
         if (viewModel?.webRtcPrivacyEnabled?.value == true) {
             view?.evaluateJavascript(com.securephoneapps.securebrowser.engine.ScriptProvider.webRtcShieldScript, null)
+        }
+        if (viewModel?.backgroundMediaPlaybackEnabled?.value == true) {
+            view?.evaluateJavascript(com.securephoneapps.securebrowser.engine.ScriptProvider.backgroundMediaPlaybackScript, null)
         }
         if (viewModel?.forcedDarkModeEnabled?.value == true) {
             view?.evaluateJavascript(com.securephoneapps.securebrowser.engine.ScriptProvider.darkModeScript, null)
